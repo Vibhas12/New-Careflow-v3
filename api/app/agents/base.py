@@ -45,3 +45,9 @@ def get(name: str) -> Agent:
         from app.agents import load_all
         load_all()
     return REGISTRY[name]
+
+
+def all_agents() -> list[Agent]:
+    from app.agents import load_all
+    load_all()
+    return list(REGISTRY.values())

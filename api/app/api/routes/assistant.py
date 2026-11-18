@@ -1,5 +1,6 @@
-"""AI Care Assistant (coordinators and doctors). Template-based agents – no language model; nothing is executed without approval."""
-from fastapi import APIRouter
+"""AI Care Assistant (coordinators and doctors). Template-based chat agents (no LLM); the patient AI summary can additionally be
+written by the LLM summary agent on request. Nothing is executed without approval."""
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -7,6 +8,7 @@ from app.api.deps import DB, CurrentUser
 from app.api.routes.care_gaps import alerts_out
 from app.models import AssistantMessage, AssistantProposal, CareGapAlert, User
 from app.services import assistant as svc
+from app.services import summary_agent
 from app.services.common import audit
 
 router = APIRouter(prefix='/api/assistant', tags=['ai assistant'])
@@ -60,9 +62,24 @@ def clear(user: CurrentUser, db: DB):
 
 @router.get('/patients/{patient_id}/summary')
 def summary(patient_id: str, user: CurrentUser, db: DB):
-    b = svc.brief(db, user, patient_id)
-    audit(db, user, 'AI summary generated', patient_id=patient_id, detail=f'Prototype summary agent (template-based) · {len(b["evidence"])} sources cited')
+    """Template summary (no LLM) + the stored AI summary if it still matches the records (`ai.status`). Never calls the model."""
+    b = summary_agent.summary(db, user, patient_id)
+    audit(db, user, 'AI summary generated', patient_id=patient_id, detail=f'Template summary agent (no LLM) · {len(b["evidence"])} sources cited')
     db.commit()
+    return b
+
+
+@router.post('/patients/{patient_id}/summary/ai')
+def summary_ai(patient_id: str, user: CurrentUser, db: DB):
+    """Write the AI summary now – one click, one model request (Context agent → Summary agent → verifier).
+    503 switched off · 429 limit / cooldown · 502 provider failure or withheld by the checks (the template stays)."""
+    svc._need(user)
+    b, ok = summary_agent.generate(db, user, patient_id)
+    if ok:
+        audit(db, user, 'AI summary written (LLM)', patient_id=patient_id, detail=f'Summary agent · {b["ai"].get("model")} · {len(b["evidence"])} sources')
+    db.commit()
+    if not ok:
+        raise HTTPException(502, f'The AI summary could not be written: {b["ai"].get("error") or b["ai"].get("lastError")}')
     return b
 
 

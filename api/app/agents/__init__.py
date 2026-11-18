@@ -12,11 +12,15 @@
 Rules for every agent: on demand only (a person's click), at most one provider request sequence per click, de-identified input,
 output verified before use, rule/template fallback on any failure, and no action without human approval.
 
-Agents in use:
+    context.py       Context agent (phase 3, code only): scoped, numbered, de-identified patient facts
+
+Agents in use (LLM, on demand):
     recommendation   care-gap "Recommended next action" wording (services/recommendation_agent.py)
+    summary          patient AI summary – overview + narrative sections citing sources (services/summary_agent.py)
 """
 
 
 def load_all() -> None:
     """Import the modules that register agents (they live next to the service that uses them)."""
     import app.services.recommendation_agent  # noqa: F401
+    import app.services.summary_agent  # noqa: F401

@@ -4,10 +4,17 @@ import { api } from './client'
 import type { Alert, Priority } from './types'
 
 export interface Fact { text: string; kind: 'fact' | 'suggestion' | 'missing'; sources: number[]; alertId?: string; priority?: Priority }
+export type Sections = { context: Fact[]; history: Fact[]; gaps: Fact[]; appointments: Fact[]; results: Fact[]; next: Fact[] }
+/** Stored LLM summary (phase 3). Written only on "Generate AI summary"; next steps always stay rule-based. */
+export interface AiSummaryState extends Partial<Omit<Sections, 'next'>> {
+  status: 'ready' | 'none' | 'stale' | 'withheld' | 'error' | 'off'
+  model?: string; generatedAt?: string; error?: string; lastError?: string; reason?: string; overview?: Fact[]
+}
 export interface Brief {
   patientId: string; patientName: string; generatedAt: string
-  sections: { context: Fact[]; history: Fact[]; gaps: Fact[]; appointments: Fact[]; results: Fact[]; next: Fact[] }
+  sections: Sections
   evidence: { n: number; ref: string; label: string; ts: string | null }[]
+  ai?: AiSummaryState
 }
 export interface Proposal {
   id: string; type: 'task' | 'reminder'; patientId: string; title: string; assignee: string | null; assigneeName: string | null
@@ -26,6 +33,16 @@ export const useChat = () => useQuery({ queryKey: ['assistant', 'messages'], que
 /** Explicit "Generate / Regenerate summary" – fetched on demand (and audited), not on page load. */
 export const usePatientSummary = (pid: string, enabled: boolean) =>
   useQuery({ queryKey: ['assistant', 'summary', pid], enabled, queryFn: () => api<Brief>(`/api/assistant/patients/${pid}/summary`), staleTime: Infinity })
+
+/** "Generate AI summary" – the only call that makes the summary agent use the LLM (one click, one request). */
+export function useGenerateAiSummary(pid: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api<Brief>(`/api/assistant/patients/${pid}/summary/ai`, { method: 'POST' }),
+    onSuccess: (b) => qc.setQueryData(['assistant', 'summary', pid], b),
+    onError: () => qc.invalidateQueries({ queryKey: ['assistant', 'summary', pid] }),     // pick up withheld / error status
+  })
+}
 
 function useRefresh() {
   const qc = useQueryClient()

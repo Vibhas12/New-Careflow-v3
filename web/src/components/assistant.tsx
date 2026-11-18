@@ -23,11 +23,14 @@ function FactRow({ f, b, card }: { f: Fact; b: Brief; card?: boolean }) {
   )
 }
 
-/** Patient brief. `cards` = profile tab layout (one card per section); otherwise the compact chat layout. */
-export function BriefView({ b, cards }: { b: Brief; cards?: boolean }) {
-  const s = b.sections
+/** Patient brief. `cards` = profile tab layout (one card per section); otherwise the compact chat layout.
+ *  `useAi` shows the stored LLM summary's overview and narrative sections; next steps always come from the rule engine. */
+export function BriefView({ b, cards, useAi }: { b: Brief; cards?: boolean; useAi?: boolean }) {
+  const ai = useAi && b.ai?.status === 'ready' ? b.ai : null
+  const s = ai ? { ...b.sections, context: ai.context ?? [], history: ai.history ?? [], gaps: ai.gaps ?? [], appointments: ai.appointments ?? [], results: ai.results ?? [] } : b.sections
   const sections: [string, Fact[]][] = cards
-    ? [['Current patient context', s.context], ['Relevant medical history', s.history], ['Outstanding care gaps', s.gaps], ['Upcoming appointments', s.appointments],
+    ? [...(ai ? [['Overview', ai.overview ?? []] as [string, Fact[]]] : []),
+       ['Current patient context', s.context], ['Relevant medical history', s.history], ['Outstanding care gaps', s.gaps], ['Upcoming appointments', s.appointments],
        ['Pending results & referrals', s.results]]
     : [['1. Patient context', s.context], ['2. Relevant history', s.history], ['3. Outstanding activities', [...s.gaps, ...s.appointments, ...s.results]]]
   const evidence = (

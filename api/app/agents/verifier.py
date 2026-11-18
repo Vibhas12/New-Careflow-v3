@@ -88,12 +88,19 @@ def _valid(y, m, d) -> bool:
 
 
 # ---------------------------------------------------------------- individual checks
-def clinical_advice(text: str) -> list[str]:
-    return sorted({msg for pat, msg in CLINICAL if re.search(pat, text, re.I)})
+def _new_matches(pattern, text: str, context: dict | None) -> bool:
+    """True when the pattern matches text that is NOT already in the facts (restating a recorded note is allowed)."""
+    facts = _flat(context) if context else ''
+    rx = pattern if isinstance(pattern, re.Pattern) else re.compile(pattern, re.I)
+    return any(m.group(0).lower() not in facts for m in rx.finditer(text))
 
 
-def priority_change(text: str) -> list[str]:
-    return ['tries to set or change the patient\'s priority'] if PRIORITY.search(text) else []
+def clinical_advice(text: str, context: dict | None = None) -> list[str]:
+    return sorted({msg for pat, msg in CLINICAL if _new_matches(pat, text, context)})
+
+
+def priority_change(text: str, context: dict | None = None) -> list[str]:
+    return ['tries to set or change the patient\'s priority'] if _new_matches(PRIORITY, text, context) else []
 
 
 def action_claims(text: str, context: dict) -> list[str]:
@@ -148,5 +155,5 @@ def sentence_limit(text: str, limit: int) -> list[str]:
 
 def check_wording(text: str, context: dict, *, priority: str | None = None, role: str | None = None) -> list[str]:
     """All content checks for a piece of AI wording that the care team will read."""
-    return (clinical_advice(text) + priority_change(text) + action_claims(text, context) + grounded_dates(text, context)
+    return (clinical_advice(text, context) + priority_change(text, context) + action_claims(text, context) + grounded_dates(text, context)
             + grounded_values(text, context) + grounded_tests(text, context) + urgency_matches(text, priority))

@@ -34,7 +34,7 @@ For PostgreSQL see `docker-compose.yml` and `api/.env.example`.
 
 ## Tests
 ```powershell
-cd api; .venv\Scripts\python -m pytest        # 132 tests: auth, scoping, priority, immutability, workflows, import, care gaps, jobs, dashboard, demo, assistant, agents
+cd api; .venv\Scripts\python -m pytest        # 148 tests: auth, scoping, priority, immutability, workflows, import, care gaps, jobs, dashboard, demo, assistant, agents
 cd web; npm run build                          # type-check + production build
 ```
 
@@ -139,7 +139,18 @@ Every LLM call in the app goes through one orchestrator; agents are small declar
 | `limits.py` | kill switch, per-user hourly cap, cooldown for everyone after a 429 on every model |
 | `orchestrator.py` | `run()`: switch → limits → privacy check of the input → **one** provider request → `verify()` + output leak check → run log |
 | `verifier.py` | **Safety & grounding verifier** (phase 2, code only – no LLM): withholds output that gives clinical advice (diagnosis, interpretation, prescribing, dose / medication changes, emergency referral), sets or changes priority, claims actions or contact attempts not in the facts, mentions dates, values or tests that are not in the facts, leaves a doctor's decision without naming a doctor, contradicts the rule's priority, or runs over 3 sentences |
+| `context.py` | **Context agent** (phase 3, code only): the patient's records in the user's scope as numbered, de-identified facts (names/IDs → "the patient", contact details / DOB / address removed from free text, staff names → role, source labels only) plus a fingerprint |
 | `testing.py` | `FakeLLM` (pytest fixture `fake_llm`) – tests never touch the network |
+
+**Patient AI summary (phase 3, `services/summary_agent.py`).** On the profile's *AI Summary* tab, *Generate AI summary* runs Context agent →
+summary agent (one Gemini request) → verifier. The agent writes an overview (1–3 statements) and the narrative sections; every fact
+or suggestion must cite an existing source number, no care gap, pending result / referral or missing-information item may be dropped,
+and the phase 2 content checks apply to every statement. Suggested next steps stay rule-based. The summary is stored per patient
+(`ai_summaries`, migration 0007) with the Context agent's fingerprint and hidden (`stale`) as soon as the records change.
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/assistant/patients/{id}/summary` | template summary (no LLM) + `ai` = stored AI summary state (`ready` / `none` / `stale` / `withheld` / `error` / `off`) |
+| POST | `/api/assistant/patients/{id}/summary/ai` | write the AI summary now (one request); 503 off · 429 limit · 502 failed / withheld (template stays) |
 
 **Run log** (`agent_runs`, migration 0006): who asked, which agent, status (`ok` / `failed` / `withheld` / `blocked` / `limited` /
 `disabled`), model and fallback attempts, error, time taken, hash of the de-identified input. Prompts and outputs are never stored there.

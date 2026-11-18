@@ -13,13 +13,13 @@ router = APIRouter(prefix='/api/agents', tags=['ai agents'])
 @router.get('')
 def agents_status(user: CurrentUser, db: DB):
     """Which agents are available to the UI right now, and the caller's own usage. Every role may read it."""
-    base.get('recommendation')                      # make sure every agent module is registered
+    agents = base.all_agents()
     cfg = get_settings()
     return {
         'enabled': cfg.agents_enabled and cfg.llm_configured,
         'onDemandOnly': True,
         'agents': [{'name': a.name, 'label': a.label, 'enabled': limits.is_enabled(a.name), 'reason': limits.unavailable_reason(a.name)}
-                   for a in base.REGISTRY.values()],
+                   for a in agents],
         'usage': limits.usage(db, user) if user.role != 'admin' else None,
     }
 

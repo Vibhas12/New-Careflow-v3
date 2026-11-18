@@ -6,7 +6,7 @@ import { useChangePriority, useMe, usePatient, usePriorityHistory, useUsers } fr
 import { downloadFile } from '../api/phase3'
 import type { PatientDetail, Priority, Task, TestItem } from '../api/types'
 import { useReferralStatus, useTests } from '../api/workflows'
-import { usePatientSummary } from '../api/assistant'
+import { useGenerateAiSummary, usePatientSummary } from '../api/assistant'
 import { BriefView } from '../components/assistant'
 import { AppointmentDetailDialog, TaskDetailDialog, TestDetailDialog } from '../components/details'
 import { BookAppointmentDialog, CallDialog, ConsultationForm, Field, ReferralDialog, ReminderDialog, RequestTestDialog, TaskDialog } from '../components/dialogs'
@@ -123,19 +123,45 @@ export function PatientDetailPage() {
   )
 }
 
-/** AI Summary tab – generated on request (and audited), from the patient's current records. */
+const AI_NOTE: Record<string, string> = {
+  none: 'No AI summary yet – the language model is used only when you select Generate AI summary.',
+  stale: 'The records changed since the AI summary was written – showing the template summary. Regenerate to update it.',
+  withheld: 'The last AI summary was withheld by the safety check – showing the template summary.',
+  error: 'The AI summary could not be written – showing the template summary.',
+}
+
+/** AI Summary tab – the template summary is assembled on request (no LLM, audited); the AI summary is written by the
+ *  summary agent (Gemini) only when the user selects Generate AI summary, and is checked against the records first. */
 function AiSummary({ pid }: { pid: string }) {
+  const toast = useToast()
   const [asked, setAsked] = useState(false)
+  const [showTemplate, setShowTemplate] = useState(false)
   const q = usePatientSummary(pid, asked)
+  const gen = useGenerateAiSummary(pid)
+  const ai = q.data?.ai
+  const aiReady = ai?.status === 'ready' && !showTemplate
+  const write = () => gen.mutate(undefined, {
+    onSuccess: (b) => { setShowTemplate(false); toast(`AI summary written by ${b.ai?.model}`) },
+    onError: (e) => toast(e.message, true),
+  })
   return (
     <>
-      <Banner warn icon="spark"><b>Prototype summary agent – template-based, no language model connected.</b> It only restates recorded data, cites the source record and timestamp for each statement, and labels suggestions separately. It does not diagnose, prescribe or act on its own.</Banner>
-      <div className="row sp mt2">
-        <div className="sm mut">{q.data ? `Generated ${fmtDateTime(q.data.generatedAt)} from the current records` : 'Not yet generated for this patient'}</div>
-        <button className="btn" disabled={q.isFetching} onClick={() => (asked ? q.refetch() : setAsked(true))}><Icon name="spark" small /> {q.isFetching ? 'Generating…' : q.data ? 'Regenerate summary' : 'Generate summary'}</button>
+      <Banner warn icon="spark"><b>Grounded summary.</b> The template summary restates recorded data without a language model. The <b>AI summary</b> is
+        written by Gemini only when you ask, from de-identified facts, and is shown only if every statement cites an existing source and passes the
+        safety checks. Suggested next steps always come from the care-gap rules. It does not diagnose, prescribe or act on its own.</Banner>
+      <div className="row sp mt2" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <div className="sm mut">{!q.data ? 'Not yet generated for this patient'
+          : aiReady ? <><Icon name="spark" small /> AI summary · {ai?.model} · {fmtDateTime(ai?.generatedAt)}{ai?.lastError ? ' (last regenerate failed – showing the previous AI summary)' : ''}</>
+          : `Template summary generated ${fmtDateTime(q.data.generatedAt)} from the current records`}</div>
+        <div className="row" style={{ gap: 8 }}>
+          <button className="btn sec" disabled={q.isFetching} onClick={() => (asked ? q.refetch() : setAsked(true))}>{q.isFetching ? 'Generating…' : q.data ? 'Refresh template summary' : 'Generate summary'}</button>
+          {ai && ai.status !== 'off' && <button className="btn" disabled={gen.isPending} onClick={write}><Icon name="spark" small /> {gen.isPending ? 'Asking Gemini…' : ai.status === 'none' ? 'Generate AI summary' : 'Regenerate AI summary'}</button>}
+          {ai?.status === 'ready' && <button className="btn ghost s" onClick={() => setShowTemplate(!showTemplate)}>{showTemplate ? 'Show AI summary' : 'Show template version'}</button>}
+        </div>
       </div>
+      {ai && AI_NOTE[ai.status] && <div className="sm mt2" style={{ color: ai.status === 'none' ? undefined : 'var(--amb)' }} title={ai.error ?? ''}>{AI_NOTE[ai.status]}</div>}
       <ErrorBanner error={q.error} />
-      {q.data ? <BriefView b={q.data} cards /> : <div className="card mt2"><Empty title="No summary yet" hint="Select Generate summary to assemble a grounded summary from this patient’s records." /></div>}
+      {q.data ? <BriefView b={q.data} cards useAi={aiReady} /> : <div className="card mt2"><Empty title="No summary yet" hint="Select Generate summary to assemble a grounded summary from this patient’s records." /></div>}
     </>
   )
 }

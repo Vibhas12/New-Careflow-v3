@@ -23,6 +23,24 @@ def deidentify(text: str, p: Patient | None) -> str:
     return PATIENT_ID.sub('the patient', text)
 
 
+def scrub(text: str, p: Patient | None) -> str:
+    """deidentify() plus removal of contact details, date of birth and address from free text (consultation notes,
+    imported document extracts) so that a single stray identifier does not block the whole request."""
+    if not text:
+        return text
+    text = deidentify(text, p)
+    text = EMAIL.sub('[email removed]', text)
+    text = PHONE_CANDIDATE.sub(lambda m: '[number removed]' if sum(c.isdigit() for c in m.group()) >= 10 else m.group(), text)
+    if p is not None:
+        for f in _dob_forms(p):
+            text = text.replace(f, '[date of birth removed]')
+        if p.address and len(p.address) > 8:
+            text = re.sub(re.escape(p.address), '[address removed]', text, flags=re.I)
+        if p.ec_name and len(p.ec_name) > 2:
+            text = re.sub(re.escape(p.ec_name), 'the emergency contact', text, flags=re.I)
+    return text
+
+
 def _dob_forms(p: Patient) -> set[str]:
     if not p.dob:
         return set()
