@@ -83,7 +83,7 @@ class AnswerAgent(Agent):
         facts = {k: v for k, v in context.items() if k != 'question'}
         return f'Question: {q}\n\nFacts (JSON):\n' + json.dumps(facts, ensure_ascii=False)
 
-    def clean(self, out: Answer) -> Answer:
+    def clean(self, out: Answer, context: dict | None = None) -> Answer:
         out.intro = ' '.join(out.intro.split())[:500]
         for s in out.statements:
             s.text, s.sources, s.patient = ' '.join(s.text.split())[:400], sorted(set(s.sources)), s.patient.strip()

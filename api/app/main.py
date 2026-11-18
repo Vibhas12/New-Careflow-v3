@@ -40,7 +40,7 @@ SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
 
 def create_app() -> FastAPI:
     cfg = get_settings()
-    app = FastAPI(title='CareFlow API', version='3.4.0', lifespan=lifespan,
+    app = FastAPI(title='CareFlow API', version='3.5.0', lifespan=lifespan,
                   description='Care-coordination API. All data in demo environments is fictional.',
                   docs_url=None if cfg.env == 'production' else '/api/docs', openapi_url=None if cfg.env == 'production' else '/api/openapi.json')
 

@@ -59,7 +59,7 @@ class RecommendationAgent(Agent):
     instruction = 'Word the recommended next action for this care gap.'
     output = Recommendation
 
-    def clean(self, rec: Recommendation) -> Recommendation:
+    def clean(self, rec: Recommendation, context: dict | None = None) -> Recommendation:
         rec.recommendation, rec.rationale, rec.task_title = (s.strip() for s in (rec.recommendation, rec.rationale, rec.task_title))
         rec.task_title = rec.task_title[:80]
         rec.recommendation, rec.rationale = rec.recommendation[:600], rec.rationale[:400]

@@ -31,6 +31,13 @@ export function useIngestActions() {
       onSuccess: (r) => { setBatch(r.batch); refresh() },
     }),
     cancel: useMutation({ mutationFn: (bid: string) => api<BatchDetail>(`/api/ingest/batches/${bid}/cancel`, { method: 'POST' }), onSuccess: setBatch }),
+    // phase 5 – AI help inside review (one model request per click; suggestions change nothing until applied)
+    aiExtract: useMutation({ mutationFn: (rid: number) => api<BatchDetail>(`/api/ingest/records/${rid}/ai-extract`, { method: 'POST' }), onSuccess: setBatch,
+      onError: () => qc.invalidateQueries({ queryKey: ['ingest', 'batch'] }) }),
+    aiApply: useMutation({ mutationFn: (rid: number) => api<BatchDetail>(`/api/ingest/records/${rid}/ai-apply`, { method: 'POST' }), onSuccess: setBatch }),
+    aiMap: useMutation({ mutationFn: (bid: string) => api<BatchDetail>(`/api/ingest/batches/${bid}/ai-map`, { method: 'POST' }), onSuccess: setBatch,
+      onError: () => qc.invalidateQueries({ queryKey: ['ingest', 'batch'] }) }),
+    aiMapApply: useMutation({ mutationFn: (bid: string) => api<BatchDetail>(`/api/ingest/batches/${bid}/ai-map/apply`, { method: 'POST' }), onSuccess: setBatch }),
   }
 }
 

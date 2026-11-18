@@ -59,6 +59,7 @@ class IngestionBatch(Base):
     n_imported: Mapped[int] = mapped_column(Integer, default=0)
     n_skipped: Mapped[int] = mapped_column(Integer, default=0)
     n_failed: Mapped[int] = mapped_column(Integer, default=0)
+    ai_mapping: Mapped[dict | None] = mapped_column(JSON)        # column-mapping agent suggestion (phase 5) – applied only on request
 
 
 class IngestionRecord(Base):
@@ -80,6 +81,7 @@ class IngestionRecord(Base):
     result: Mapped[str | None] = mapped_column(String(8))
     result_message: Mapped[str | None] = mapped_column(Text)
     saved_entity: Mapped[str | None] = mapped_column(String(40))
+    ai_suggestion: Mapped[dict | None] = mapped_column(JSON)     # document-extraction agent suggestion (phase 5) – applied only on request
 
 
 class Document(Base):

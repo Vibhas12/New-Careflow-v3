@@ -11,7 +11,7 @@ from app.ingest import demo, pipeline
 from app.ingest.parsing import IngestError
 from app.models import Document, IngestionBatch, IngestionRecord, Patient, User
 from app.schemas import BatchDetail, BatchOut, ConfirmOut, DemoDataset, IngestRecordOut, RecordReviewIn
-from app.services import care_gaps
+from app.services import care_gaps, import_agents
 
 router = APIRouter(prefix='/api/ingest', tags=['data import'], dependencies=[Depends(require_roles('coordinator'))])
 docs_router = APIRouter(prefix='/api/documents', tags=['data import'])
@@ -30,11 +30,12 @@ def detail(db, bid: str) -> BatchDetail:
         raise HTTPException(404, 'Batch not found')
     recs = list(db.execute(select(IngestionRecord).where(IngestionRecord.batch_id == bid).order_by(IngestionRecord.id)).scalars())
     d = db.execute(select(Document).where(Document.batch_id == bid)).scalar()
+    unknown = import_agents.unknown_columns(db, b) if b.file_type in ('csv', 'json') and b.status == 'Needs Review' else []
     return BatchDetail(**batch_out(db, b), record_list=[IngestRecordOut(
         id=r.id, row=r.row_no, kind=r.kind, mapped=r.mapped or {}, status=r.match_status, patient_id=r.matched_patient_id, candidates=r.candidates or [],
-        issues=r.issues or [], decision=r.decision, result=r.result, message=r.result_message, saved=r.saved_entity) for r in recs],
+        issues=r.issues or [], decision=r.decision, result=r.result, message=r.result_message, saved=r.saved_entity, ai_suggestion=r.ai_suggestion) for r in recs],
         document={'id': d.id, 'text': (d.extracted_text or '')[:8000], 'method': d.extraction_method, 'patientId': d.patient_id} if d else None,
-        pending=sum(1 for r in recs if r.decision == 'pending'))
+        pending=sum(1 for r in recs if r.decision == 'pending'), unknown_columns=unknown, ai_mapping=b.ai_mapping)
 
 
 def _created(db, b: IngestionBatch) -> BatchDetail:
@@ -98,6 +99,72 @@ def review(rid: int, body: RecordReviewIn, user: CurrentUser, db: DB):
         db.rollback()
         raise HTTPException(409, str(e))
     return detail(db, r.batch_id)
+
+
+# ---------------------------------------------------------------- phase 5: AI help inside review (on request only)
+def _record(db, rid: int) -> IngestionRecord:
+    r = db.get(IngestionRecord, rid)
+    if r is None:
+        raise HTTPException(404, 'Record not found')
+    return r
+
+
+def _batch(db, bid: str) -> IngestionBatch:
+    b = db.get(IngestionBatch, bid)
+    if b is None:
+        raise HTTPException(404, 'Batch not found')
+    return b
+
+
+@router.post('/records/{rid}/ai-extract', response_model=BatchDetail)
+def ai_extract(rid: int, user: CurrentUser, db: DB):
+    """Document-extraction agent (one model request) – stores a suggestion; nothing changes until Apply. 502 if failed / withheld."""
+    r = _record(db, rid)
+    try:
+        ok = import_agents.extract(db, user, r)
+    except IngestError as e:
+        db.rollback()
+        raise HTTPException(409, str(e))
+    if not ok:
+        raise HTTPException(502, f'AI extraction not available for this row: {(r.ai_suggestion or {}).get("error")}')
+    return detail(db, r.batch_id)
+
+
+@router.post('/records/{rid}/ai-apply', response_model=BatchDetail)
+def ai_apply(rid: int, user: CurrentUser, db: DB):
+    r = _record(db, rid)
+    try:
+        import_agents.apply_extraction(db, user, r)
+    except IngestError as e:
+        db.rollback()
+        raise HTTPException(409, str(e))
+    return detail(db, r.batch_id)
+
+
+@router.post('/batches/{bid}/ai-map', response_model=BatchDetail)
+def ai_map(bid: str, user: CurrentUser, db: DB):
+    """Column-mapping agent (one model request, column names and value shapes only) – stores a suggestion."""
+    b = _batch(db, bid)
+    try:
+        ok = import_agents.suggest_mapping(db, user, b)
+    except IngestError as e:
+        db.rollback()
+        raise HTTPException(409, str(e))
+    if not ok:
+        raise HTTPException(502, f'AI column mapping not available: {(b.ai_mapping or {}).get("error")}')
+    return detail(db, bid)
+
+
+@router.post('/batches/{bid}/ai-map/apply', response_model=BatchDetail)
+def ai_map_apply(bid: str, user: CurrentUser, db: DB):
+    """Fill empty fields from the mapped columns; every changed record is re-checked for matches and duplicates."""
+    b = _batch(db, bid)
+    try:
+        import_agents.apply_mapping(db, user, b)
+    except IngestError as e:
+        db.rollback()
+        raise HTTPException(409, str(e))
+    return detail(db, bid)
 
 
 @router.post('/batches/{bid}/confirm', response_model=ConfirmOut)

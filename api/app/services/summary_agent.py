@@ -66,7 +66,7 @@ class SummaryAgent(Agent):
     temperature = 0.2
     max_output_tokens = 4096
 
-    def clean(self, out: PatientSummary) -> PatientSummary:
+    def clean(self, out: PatientSummary, context: dict | None = None) -> PatientSummary:
         for part in PARTS:
             items = []
             for s in getattr(out, part):

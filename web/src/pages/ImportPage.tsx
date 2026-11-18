@@ -1,5 +1,6 @@
 import { useRef, useState, type DragEvent } from 'react'
 import { ApiError } from '../api/client'
+import { useAgents } from '../api/assistant'
 import { downloadFile, useBatch, useBatches, useDemoDatasets, useIngestActions } from '../api/phase3'
 import type { BatchDetail, IngestRecord } from '../api/types'
 import { Field } from '../components/dialogs'
@@ -68,6 +69,9 @@ export function ImportPage() {
   const toImport = b?.recordList.filter((r) => r.decision === 'import').length ?? 0
   const decide = (rid: number, body: { patientId?: string; decision?: 'import' | 'skip'; fields?: Record<string, string | null> }) =>
     act.review.mutate({ rid, ...body }, { onError: (e) => toast(e.message, true) })
+  const agentsOn = new Set((useAgents().data?.agents ?? []).filter((a) => a.enabled).map((a) => a.name))
+  const aiBusy = act.aiExtract.isPending || act.aiApply.isPending || act.aiMap.isPending || act.aiMapApply.isPending
+  const onAiError = (e: Error) => toast(e.message, true)
 
   return (
     <>
@@ -104,6 +108,9 @@ export function ImportPage() {
             <span className="sm mut">{b.type?.toUpperCase()} · {Math.round((b.size ?? 0) / 102.4) / 10} KB · extraction: {b.method ?? '—'}</span></div>
           <div className="row" style={{ margin: '6px 0' }}>{(['matched', 'new', 'uncertain', 'duplicate', 'invalid'] as const).map((s) => <span key={s} className="sm"><Badge s={s} /> {b.recordList.filter((r) => r.status === s).length}</span>)}</div>
           {b.message && !editable && <p className="sm mut">{b.message}</p>}
+          {editable && b.unknownColumns.length > 0 && <ColumnMappingPanel b={b} enabled={agentsOn.has('import_map')} busy={aiBusy}
+            onMap={() => act.aiMap.mutate(b.id, { onSuccess: () => toast('Column mapping suggested – review it, then apply'), onError: onAiError })}
+            onApply={() => act.aiMapApply.mutate(b.id, { onSuccess: () => toast('Mapping applied – empty fields filled and every row re-checked'), onError: onAiError })} />}
           {b.document?.text && <details className="mt2"><summary className="sm"><b>Extracted text</b> (check the PDF extraction)</summary><pre style={{ whiteSpace: 'pre-wrap', background: '#f6f8fb', border: '1px solid var(--line)', borderRadius: 8, padding: 10, maxHeight: 220, overflow: 'auto', fontSize: 12 }}>{b.document.text}</pre></details>}
           {b.recordList.length > 0 && (
             <div className="tw mt"><table className="tbl">
@@ -112,7 +119,13 @@ export function ImportPage() {
                 <tr key={r.id}>
                   <td>{r.row}</td><td>{KINDS[r.kind] ?? r.kind}</td>
                   <td>{(r.patientId || r.mapped.patient_id) && <b className="nowrap">{r.patientId || r.mapped.patient_id}</b>}<br /><span className="sm mut">{[r.mapped.first_name, r.mapped.last_name].filter(Boolean).join(' ')}</span></td>
-                  <td className="sm">{summary(r)}</td>
+                  <td className="sm">{summary(r)}
+                    {editable && r.aiSuggestion && <AiSuggestionBox r={r} busy={aiBusy}
+                      onApply={() => act.aiApply.mutate(r.id, { onSuccess: () => toast(`AI suggestion applied to row ${r.row} – re-checked`), onError: onAiError })} />}
+                    {editable && b.type === 'pdf' && r.kind === 'test' && agentsOn.has('import_extract') && !(r.aiSuggestion?.status === 'ready' && !r.aiSuggestion.applied) &&
+                      <div className="mt2"><button className="btn ghost s" disabled={aiBusy} onClick={() => act.aiExtract.mutate(r.id, { onSuccess: () => toast('AI extraction ready – review the suggestion, then apply'), onError: onAiError })}>
+                        <Icon name="spark" small /> {act.aiExtract.isPending ? 'Asking Gemini…' : r.aiSuggestion ? 'Extract again with AI' : 'Extract with AI'}</button></div>}
+                  </td>
                   <td><Badge s={r.status} />{r.decision === 'pending' && <><br /><span className="sm" style={{ color: 'var(--amb)' }}>Decision needed</span></>}
                     {r.result && <><br /><Badge s={r.result === 'saved' ? 'Imported' : r.result === 'failed' ? 'Failed' : 'Cancelled'} /></>}</td>
                   <td className="sm">{r.issues.map((i, k) => <div key={k} style={{ color: i.level === 'error' ? 'var(--red)' : i.level === 'warning' ? 'var(--amb)' : 'var(--mut)' }}>{i.msg}</div>)}</td>
@@ -162,6 +175,51 @@ export function ImportPage() {
       </div>
       {editing && <EditRecordDialog rec={editing} onSave={(fields) => { decide(editing.id, { fields }); setEditing(null) }} onClose={() => setEditing(null)} />}
     </>
+  )
+}
+
+const AI_FAIL: Record<string, string> = { withheld: 'withheld by the safety check', failed: 'could not be produced', blocked: 'not sent – the text still contained identifiers' }
+
+/** Phase 5: the extraction agent's suggestion for one PDF report row – current value → suggested value, applied only on request. */
+function AiSuggestionBox({ r, busy, onApply }: { r: IngestRecord; busy: boolean; onApply: () => void }) {
+  const s = r.aiSuggestion!
+  if (s.status !== 'ready') return <div className="sm mt2" style={{ color: 'var(--amb)' }} title={s.error ?? ''}>AI extraction {AI_FAIL[s.status] ?? s.status} – keep the rule-based values or edit them.</div>
+  if (s.applied) return <div className="sm mut mt2"><Icon name="spark" small /> AI suggestion applied ({s.model})</div>
+  const rows = Object.entries(s.fields ?? {})
+  return (
+    <div className="prop mt2">
+      <div className="sm b" style={{ color: '#6b45bd' }}><Icon name="spark" small /> AI suggestion · {s.model} <span className="tag s" style={{ marginLeft: 6 }}>checked against the document – requires approval</span></div>
+      <table className="sm" style={{ marginTop: 4 }}><tbody>{rows.map(([k, v]) => (
+        <tr key={k}><td className="mut" style={{ paddingRight: 8 }}>{LABEL(k)}</td><td style={{ textDecoration: r.mapped[k] && r.mapped[k] !== v ? 'line-through' : undefined, color: 'var(--mut)', paddingRight: 8 }}>{r.mapped[k] || '—'}</td><td><b>{v}</b></td></tr>
+      ))}</tbody></table>
+      {s.notes && <div className="sm mut mt2">Note: {s.notes}</div>}
+      <div className="row mt2"><button className="btn s" disabled={busy} onClick={onApply}><Icon name="check" small /> Apply to this row</button><span className="sm mut">Patient identity and matching are not changed.</span></div>
+    </div>
+  )
+}
+
+/** Phase 5: unrecognised CSV/JSON columns and the column-mapping agent's suggestion (the model sees column names and value shapes only). */
+function ColumnMappingPanel({ b, enabled, busy, onMap, onApply }: { b: BatchDetail; enabled: boolean; busy: boolean; onMap: () => void; onApply: () => void }) {
+  const m = b.aiMapping
+  const ready = m?.status === 'ready' && !m.applied
+  return (
+    <div className="hl mt2">
+      <div className="row sp" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <span className="sm"><b>{b.unknownColumns.length} column(s) not recognised</b> and therefore not imported: {b.unknownColumns.map((c) => <code key={c.header} style={{ marginRight: 6 }} title={`${c.shape} · ${c.filled}`}>{c.header}</code>)}</span>
+        {enabled && !ready && !m?.applied && <button className="btn s" disabled={busy} onClick={onMap}><Icon name="spark" small /> {busy ? 'Working…' : m ? 'Suggest mapping again' : 'Map columns with AI'}</button>}
+      </div>
+      {enabled && !m && <div className="sm mut mt2">The AI sees only the column names and the shape of their values (date, number, text length) – never the values themselves.</div>}
+      {m && m.status !== 'ready' && <div className="sm mt2" style={{ color: 'var(--amb)' }} title={m.error ?? ''}>AI column mapping {AI_FAIL[m.status] ?? m.status}.</div>}
+      {m?.status === 'ready' && (
+        <div className="mt2">
+          <table className="sm"><thead><tr><th style={{ textAlign: 'left', paddingRight: 10 }}>Column</th><th style={{ textAlign: 'left', paddingRight: 10 }}>Suggested field</th><th style={{ textAlign: 'left' }}>Why</th></tr></thead>
+            <tbody>{(m.mappings ?? []).map((x) => <tr key={x.header}><td style={{ paddingRight: 10 }}><code>{x.header}</code></td><td style={{ paddingRight: 10 }}>{x.field ? <b>{LABEL(x.field)}</b> : <span className="mut">ignore</span>}</td><td className="mut">{x.reason}</td></tr>)}</tbody></table>
+          {ready ? <div className="row mt2"><button className="btn s" disabled={busy} onClick={onApply}><Icon name="check" small /> Apply mapping</button>
+            <span className="sm mut">Fills empty fields only and re-checks every row for matches and duplicates. {m.model}</span></div>
+            : <div className="sm mut mt2"><Icon name="spark" small /> Mapping applied ({m.model}).</div>}
+        </div>
+      )}
+    </div>
   )
 }
 

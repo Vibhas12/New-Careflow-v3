@@ -92,7 +92,7 @@ def run(db: Session, user: User, agent_name: str, context: dict, *, patient: Pat
         r = rec('failed', input_hash=h, attempts=e.attempts, error=str(e), error_code=e.code)
         return AgentResult(False, 'failed', error=str(e), run_id=r.id)
 
-    out = a.clean(res.output)                                                    # 5. verify
+    out = a.clean(res.output, context)                                           # 5. verify
     issues = list(a.verify(out, context))
     issues += [f'output contains {k}' for k in leaks_in(out.model_dump_json())]
     if issues:

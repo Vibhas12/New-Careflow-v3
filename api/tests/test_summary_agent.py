@@ -114,7 +114,7 @@ def test_switch_off_summary_only(coord, pid, llm, monkeypatch):
     assert coord.get(f'/api/assistant/patients/{pid}/summary').json()['ai']['status'] == 'off'
     assert coord.post(f'/api/assistant/patients/{pid}/summary/ai').status_code == 503
     names = {a['name']: a['enabled'] for a in coord.get('/api/agents').json()['agents']}
-    assert names == {'recommendation': True, 'summary': False, 'answer': True}
+    assert names['summary'] is False and all(v for k, v in names.items() if k != 'summary')       # only the summary agent is off
 
 
 # ---------------------------------------------------------------- verifier

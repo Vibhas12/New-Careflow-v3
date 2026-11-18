@@ -25,8 +25,8 @@ class Agent:
     def prompt(self, context: dict) -> str:
         return f'{self.instruction} Facts (JSON):\n' + json.dumps(context, ensure_ascii=False)
 
-    def clean(self, out: BaseModel) -> BaseModel:
-        """Normalise the model's output (trim, cap lengths). Override per agent."""
+    def clean(self, out: BaseModel, context: dict | None = None) -> BaseModel:
+        """Normalise the model's output (trim, cap lengths) before verify(). Override per agent; `context` is what was sent."""
         return out
 
     def verify(self, out: BaseModel, context: dict) -> list[str]:

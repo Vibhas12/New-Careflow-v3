@@ -86,12 +86,20 @@ export interface Candidate { id: string; name: string; dob: string | null; reaso
 export interface IngestRecord {
   id: number; row: number | null; kind: string; mapped: Record<string, string>; status: 'matched' | 'new' | 'uncertain' | 'duplicate' | 'invalid'
   patientId: string | null; candidates: Candidate[]; issues: Issue[]; decision: 'pending' | 'import' | 'skip'; result: string | null; message: string | null; saved: string | null
+  /** Phase 5: document-extraction agent suggestion – applied only when the reviewer selects Apply */
+  aiSuggestion: AiImportState & { fields?: Record<string, string>; notes?: string } | null
 }
+export interface AiImportState { status: 'ready' | 'withheld' | 'failed' | 'blocked'; model?: string; at?: string; applied?: boolean; error?: string; issues?: string[] }
+export interface UnknownColumn { header: string; kinds: string[]; shape: string; filled: string }
 export interface Batch {
   id: string; filename: string; type: string | null; size: number | null; sha256: string | null; status: string; message: string | null
   uploadedBy: string | null; uploadedAt: string; confirmedAt: string | null; method: string | null; records: number; imported: number; skipped: number; failed: number
 }
-export interface BatchDetail extends Batch { recordList: IngestRecord[]; document: { id: string; text: string; method: string | null; patientId: string | null } | null; pending: number }
+export interface BatchDetail extends Batch {
+  recordList: IngestRecord[]; document: { id: string; text: string; method: string | null; patientId: string | null } | null; pending: number
+  unknownColumns: UnknownColumn[]
+  aiMapping: AiImportState & { mappings?: { header: string; field: string; reason: string }[] } | null
+}
 export interface DemoDataset { id: string; file: string; title: string; summary: string; effect: string; records: number }
 export interface Alert {
   id: string; rule: string; category: string; ruleName: string; patientId: string; patientName: string; entity: string; priority: Priority

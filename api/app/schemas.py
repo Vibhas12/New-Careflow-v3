@@ -398,6 +398,7 @@ class IngestRecordOut(Schema):
     result: str | None
     message: str | None
     saved: str | None
+    ai_suggestion: dict | None = None         # phase 5: document-extraction agent suggestion (status, fields, model …)
 
 
 class BatchOut(Schema):
@@ -422,6 +423,8 @@ class BatchDetail(BatchOut):
     record_list: list[IngestRecordOut] = []
     document: dict | None = None
     pending: int = 0
+    unknown_columns: list[dict] = []          # phase 5: CSV/JSON columns the alias table does not recognise (names + value shapes)
+    ai_mapping: dict | None = None            # phase 5: column-mapping agent suggestion
 
 
 class RecordReviewIn(Schema):

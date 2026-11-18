@@ -18,6 +18,8 @@ Agents in use (LLM, on demand):
     recommendation   care-gap "Recommended next action" wording (services/recommendation_agent.py)
     summary          patient AI summary – overview + narrative sections citing sources (services/summary_agent.py)
     answer           AI Care Assistant "Ask AI" – answers + drafted tasks / reminders (services/answer_agent.py)
+    import_extract   Data Import: report fields from a PDF's text, identity removed (services/import_agents.py)
+    import_map       Data Import: CareFlow field for unrecognised CSV/JSON columns – names and value shapes only
 """
 
 
@@ -26,3 +28,4 @@ def load_all() -> None:
     import app.services.recommendation_agent  # noqa: F401
     import app.services.summary_agent  # noqa: F401
     import app.services.answer_agent  # noqa: F401
+    import app.services.import_agents  # noqa: F401

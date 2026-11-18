@@ -34,7 +34,7 @@ For PostgreSQL see `docker-compose.yml` and `api/.env.example`.
 
 ## Tests
 ```powershell
-cd api; .venv\Scripts\python -m pytest        # 164 tests: auth, scoping, priority, immutability, workflows, import, care gaps, jobs, dashboard, demo, assistant, agents
+cd api; .venv\Scripts\python -m pytest        # 179 tests: auth, scoping, priority, immutability, workflows, import, care gaps, jobs, dashboard, demo, assistant, agents
 cd web; npm run build                          # type-check + production build
 ```
 
@@ -161,6 +161,17 @@ message; leak checks across every patient in scope). Aliases are mapped back to 
 `assistant_proposals` in status *Proposed*. If the agent is off, limited, fails or is withheld, the template answer is returned with a
 note – Ask AI never returns an error. Template replies that match no intent offer *Ask AI instead*.
 The orchestrator commits before the provider request, so no database transaction is open while waiting for the model.
+
+**Data Import agents (phase 5, `services/import_agents.py`)** – on request only, inside review; they never import anything.
+* *Extract with AI* (PDF report row, `POST /api/ingest/records/{id}/ai-extract`): identity lines (patient, name, DOB, address, NHS
+  number, contacts, clinician) are removed and names / IDs scrubbed before sending; blocked if anything identifying remains. Suggests
+  test name, date, findings and an abnormal flag only – identity and ID-first matching are untouched. Test name, date and every value
+  must appear in the document, findings must be mostly its own words; an abnormal / normal flag the document does not state is dropped.
+* *Map columns with AI* (CSV / JSON batch with unrecognised columns, `POST /api/ingest/batches/{id}/ai-map`): the model sees column
+  names and value **shapes** only (date, number, ID format, text length, fill rate) – never values. Each mapping must name a real
+  unknown column and a field valid for the record types present; no field twice.
+* Suggestions are stored (`ingestion_records.ai_suggestion`, `ingestion_batches.ai_mapping`, migration 0008) and change records only on
+  *Apply* (`…/ai-apply`, `…/ai-map/apply`), which re-runs matching and duplicate checks; mapping fills empty fields only.
 
 **Run log** (`agent_runs`, migration 0006): who asked, which agent, status (`ok` / `failed` / `withheld` / `blocked` / `limited` /
 `disabled`), model and fallback attempts, error, time taken, hash of the de-identified input. Prompts and outputs are never stored there.
