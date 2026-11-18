@@ -52,7 +52,7 @@ def test_off_without_key(coord):
 
 def test_word_store_and_show(coord, llm_on):
     aid = coord.get('/api/care-gaps').json()[0]['id']
-    assert coord.get('/api/care-gaps').json()[0]['aiStatus'] in ('pending', 'error')
+    assert coord.get('/api/care-gaps').json()[0]['aiStatus'] in ('none', 'error')
     r = coord.post(f'/api/care-gaps/{aid}/recommendation')
     assert r.status_code == 200, r.text
     a = r.json()
@@ -68,7 +68,8 @@ def test_stale_wording_is_hidden_after_facts_change(coord, llm_on):
         a.reason = a.reason + ' (updated by a rescan)'
         db.commit()
     a = next(x for x in coord.get('/api/care-gaps').json() if x['id'] == aid)
-    assert a['aiStatus'] == 'pending' and a['aiText'] is None              # never show wording for facts that changed
+    assert a['aiStatus'] == 'stale' and a['aiText'] is None                # never show wording for facts that changed
+    assert len(llm_on) == 1                                                 # ...and never re-word automatically
 
 
 def test_failure_falls_back_to_template(coord, llm_on, monkeypatch):
@@ -85,13 +86,39 @@ def test_failure_falls_back_to_template(coord, llm_on, monkeypatch):
     assert a['aiStatus'] == 'error' and 'quota' in a['aiError'] and a['action']['text']      # rule template still there
 
 
-def test_background_job_words_pending(llm_on):
-    from app.jobs import word_recommendations
+# ---------------------------------------------------------------- phase 0: on-demand only
+def test_no_automatic_llm_calls(coord, admin, llm_on, monkeypatch):
+    """Listing alerts, scans, the scheduler's jobs and an admin 'run jobs' must never call the model."""
+    import app.jobs as jobs
+    assert set(jobs.JOBS) == {'deliver_reminders', 'scan_care_gaps'}
+    assert not hasattr(jobs, 'kick_wording') and not hasattr(jobs, 'word_recommendations')
+    coord.get('/api/care-gaps')
+    assert coord.post('/api/care-gaps/scan').status_code == 200
     with SessionLocal() as db:
-        r = word_recommendations(db)
-        assert r['worded'] >= 1 and r['failed'] == 0
-        assert all(agent.is_current(a) for a in db.execute(select(CareGapAlert).where(CareGapAlert.status == 'Open')).scalars()
-                   ) or r['remaining'] > 0
+        a = first_open(db)
+        a.reason += ' (facts changed)'                                       # a change that previously re-triggered wording
+        db.commit()
+        from app.services import care_gaps
+        care_gaps.rescan(db, None)
+    for name, fn in jobs.JOBS.items():
+        with SessionLocal() as db:
+            fn(db)
+    assert admin.post('/api/jobs/run').status_code == 200
+    coord.get('/api/care-gaps')
+    assert llm_on == []                                                     # zero LLM calls without a click
+
+
+def test_one_click_one_call(coord, llm_on):
+    with SessionLocal() as db:                                              # shared test DB: clear wording left by earlier tests
+        for a in db.execute(select(CareGapAlert)).scalars():
+            a.ai_text = a.ai_rationale = a.ai_task_title = a.ai_source_hash = a.ai_error = None
+        db.commit()
+    alerts = coord.get('/api/care-gaps').json()
+    assert all(a['aiStatus'] in ('none', 'error') for a in alerts)          # nothing generated until asked
+    coord.post(f"/api/care-gaps/{alerts[0]['id']}/recommendation")
+    assert len(llm_on) == 1
+    after = {a['id']: a['aiStatus'] for a in coord.get('/api/care-gaps').json()}
+    assert after[alerts[0]['id']] == 'ready' and all(s != 'ready' for k, s in after.items() if k != alerts[0]['id'])
 
 
 def test_approve_uses_ai_wording(coord, llm_on):

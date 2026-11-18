@@ -169,10 +169,7 @@ def rescan(db: Session, patient_ids: list[str] | None = None, *, commit: bool = 
             a.status, a.resolved_at = 'Resolved', now; resolved += 1
             audit(db, None, 'Care gap resolved automatically', patient_id=a.patient_id, entity=a.id, detail=f'Rule no longer fires – {a.reason}')
     if commit:
-        db.commit()
-        if opened or reopened:                       # new alerts → let the Gemini agent word them in the background
-            from app.jobs import kick_wording
-            kick_wording()
+        db.commit()                                  # no LLM call here: AI wording is generated only on request
     still_open = sum(1 for gid in found if gid not in existing or existing[gid].status == 'Open')
     return {'opened': opened, 'reopened': reopened, 'resolved': resolved, 'open': still_open}
 

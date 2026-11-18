@@ -88,9 +88,10 @@ function AlertCard({ a, onAct }: { a: Alert; onAct: (k: 'approve' | 'modify' | '
           {a.status === 'Open' && a.aiStatus !== 'off' && (
             <div className="sm mut mt2 row" style={{ gap: 8, flexWrap: 'wrap' }}>
               {a.aiStatus === 'ready' && <span><Icon name="spark" small /> Worded by Gemini · {a.aiModel} · {fmtDateTime(a.aiGeneratedAt)}</span>}
-              {a.aiStatus === 'pending' && <span>AI wording in progress… (showing the rule template)</span>}
+              {a.aiStatus === 'none' && <span>Showing the rule template · AI wording runs only when you ask</span>}
+              {a.aiStatus === 'stale' && <span style={{ color: 'var(--amb)' }}>Alert facts changed since the AI wording – showing the rule template</span>}
               {a.aiStatus === 'error' && <span style={{ color: 'var(--amb)' }} title={a.aiError ?? ''}>AI wording unavailable – showing the rule template</span>}
-              <button className="btn ghost s" disabled={reword.isPending} onClick={regen}>{reword.isPending ? 'Asking Gemini…' : a.aiStatus === 'ready' ? 'Regenerate with AI' : 'Generate with AI'}</button>
+              <button className="btn ghost s" disabled={reword.isPending} onClick={regen}>{reword.isPending ? 'Asking Gemini…' : a.aiStatus === 'ready' || a.aiStatus === 'stale' ? 'Regenerate with AI' : 'Generate with AI'}</button>
             </div>
           )}
           {a.taskId && <div className="sm mt2">Task <b>{a.taskId}</b> created from this alert.</div>}

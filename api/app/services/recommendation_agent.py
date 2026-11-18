@@ -10,6 +10,9 @@ department, primary condition and the rule's template action. No names, IDs, dat
 (patient names and IDs that appear inside rule text are replaced before sending).
 
 Without a configured key (CAREFLOW_GEMINI_API_KEY) or when the call fails, the UI keeps showing the rule template.
+
+On demand only: word() is called solely from POST /api/care-gaps/{id}/recommendation, i.e. when a person clicks
+"Generate / Regenerate with AI". No scan, import, list view or scheduled job calls the model.
 """
 import hashlib
 import json
@@ -154,10 +157,14 @@ def word(db: Session, a: CareGapAlert, *, commit: bool = True) -> bool:
 
 
 def status(a: CareGapAlert) -> str:
-    """'ready' – wording matches the current facts · 'off' – no key configured · 'error' – the last attempt failed
-    (the rule template is shown) · 'pending' – queued for the background agent run."""
+    """On-demand only – nothing is generated automatically, so there is no 'pending' state.
+    'ready' – wording matches the current facts · 'off' – no key configured · 'error' – the last requested attempt failed ·
+    'stale' – wording exists but the alert's facts changed (hidden; offer Regenerate) · 'none' – never requested (offer Generate).
+    In every state except 'ready' the UI shows the rule template."""
     if is_current(a):
         return 'ready'
     if not get_settings().llm_configured:
         return 'off'
-    return 'error' if a.ai_error else 'pending'
+    if a.ai_error:
+        return 'error'
+    return 'stale' if a.ai_text else 'none'

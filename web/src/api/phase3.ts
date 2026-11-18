@@ -48,11 +48,8 @@ export async function downloadFile(url: string, name: string) {
 // ---------------------------------------------------------------- care gaps
 export interface AlertQuery { status?: string; rule?: string; priority?: Priority | ''; patientId?: string; mine?: boolean }
 export const useAlerts = (q: AlertQuery, enabled = true) =>
-  useQuery({
-    queryKey: ['care-gaps', 'list', q], enabled, queryFn: () => api<Alert[]>('/api/care-gaps', { query: { ...q } }),
-    // while the Gemini agent is still wording open alerts in the background, poll so the text appears without a reload
-    refetchInterval: (query) => ((query.state.data as Alert[] | undefined)?.some((a) => a.status === 'Open' && a.aiStatus === 'pending') ? 5000 : false),
-  })
+  // no polling: AI wording is generated only when the user clicks "Generate with AI" (the mutation below refreshes the list)
+  useQuery({ queryKey: ['care-gaps', 'list', q], enabled, queryFn: () => api<Alert[]>('/api/care-gaps', { query: { ...q } }) })
 export const useAlertSummary = (mine?: boolean) =>
   useQuery({ queryKey: ['care-gaps', 'summary', mine], queryFn: () => api<AlertSummary>('/api/care-gaps/summary', { query: { mine } }) })
 

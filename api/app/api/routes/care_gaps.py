@@ -10,7 +10,7 @@ from app.api.deps import DB, CurrentUser, require_roles
 from fastapi import HTTPException
 
 from app.core.config import get_settings
-from app.jobs import kick_wording, last_runs, run_all
+from app.jobs import last_runs, run_all
 from app.models import AuditLog, CareGapAlert, Patient
 from app.schemas import AlertApproveIn, AlertOut, AlertSummary, Schema
 from app.services import care_gaps as svc
@@ -57,15 +57,13 @@ def list_alerts(user: CurrentUser, db: DB, status: Status = 'Open', rule: str | 
     if assignee:
         q = q.where(CareGapAlert.assignee == (user.id if assignee == 'me' else assignee))
     rows = sorted(db.execute(q.limit(1000)).scalars(), key=lambda a: (svc.PRI_RANK[a.priority], a.first_seen))
-    out = alerts_out(db, rows)
-    if any(a.status == 'Open' and a.ai_status == 'pending' for a in out):
-        kick_wording()                                   # word new alerts in the background; the page polls for the result
-    return out
+    return alerts_out(db, rows)                          # listing never calls the LLM (AI wording is on request only)
 
 
 @router.post('/{alert_id}/recommendation', response_model=AlertOut)
 def reword(alert_id: str, user: CurrentUser, db: DB):
-    """(Re)generate the AI wording for one alert now (coordinator / doctor, own scope). Falls back to the rule template on failure."""
+    """(Re)generate the AI wording for one alert – the ONLY path that calls the LLM for care gaps, triggered by a person's click
+    (coordinator / doctor, own scope). Falls back to the rule template on failure; there is no automatic retry."""
     a = svc._alert_for(db, user, alert_id)
     if not get_settings().llm_configured:
         raise HTTPException(503, 'The AI recommendation agent is not configured (set CAREFLOW_GEMINI_API_KEY)')

@@ -100,7 +100,7 @@ export interface Alert {
   firstSeen: string; lastSeen: string; resolvedAt: string | null; actionedAt: string | null; taskId: string | null; dismissReason: string | null
   /** LLM wording (Gemini) of the recommended action – only present when it matches the alert's current facts */
   aiText: string | null; aiRationale: string | null; aiTaskTitle: string | null; aiModel: string | null; aiGeneratedAt: string | null
-  aiStatus: 'ready' | 'pending' | 'error' | 'off'; aiError: string | null
+  aiStatus: 'ready' | 'none' | 'stale' | 'error' | 'off'; aiError: string | null
 }
 export interface AlertSummary { categories: { rule: string; category: string; description: string; open: number; high: number }[]; totalOpen: number; byStatus: Record<string, number> }
 export interface JobRun { ok: boolean; at: string; trigger: string; result?: Record<string, number>; error?: string }

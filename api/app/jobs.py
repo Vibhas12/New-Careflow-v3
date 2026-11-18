@@ -4,7 +4,9 @@ Jobs
   deliver_reminders  – sends every due reminder (SIMULATED: marks it Delivered or Failed; nothing leaves the system)
   scan_care_gaps     – re-runs the care-gap rules for all patients (catches gaps that appear with the passing of time,
                        e.g. a review date that has just gone by – actions in the app already rescan the affected patient)
-  word_recommendations – the Gemini recommendation agent words open alerts whose facts are new or changed
+
+No job calls the LLM. AI wording (Gemini) runs only when a person asks for it – POST /api/care-gaps/{id}/recommendation
+(the "Generate / Regenerate with AI" button). Scans, imports, demo loads, list views and scheduler runs never call the model.
 
 Runners
   embedded  – a daemon thread started with the API (settings.scheduler == 'embedded'; single instance / development)
@@ -20,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db import SessionLocal
-from app.models import AppSetting, CareGapAlert, Reminder
+from app.models import AppSetting, Reminder
 from app.services import care_gaps
 from app.services.common import audit, utcnow
 
@@ -50,39 +52,9 @@ def scan_care_gaps(db: Session) -> dict:
     return care_gaps.rescan(db, None)
 
 
-def word_recommendations(db: Session) -> dict:
-    """LLM wording for open alerts whose facts changed (or were never worded). Errored alerts are retried last."""
-    from app.services import recommendation_agent as agent
-    cfg = get_settings()
-    if not cfg.llm_configured:
-        return {'skipped': 'no Gemini API key configured'}
-    todo = [a for a in db.execute(select(CareGapAlert).where(CareGapAlert.status == 'Open')).scalars() if not agent.is_current(a)]
-    todo.sort(key=lambda a: (a.ai_error is not None, care_gaps.PRI_RANK[a.priority], a.first_seen))
-    ok = sum(agent.word(db, a) for a in todo[:cfg.llm_batch_size])
-    return {'worded': ok, 'failed': min(len(todo), cfg.llm_batch_size) - ok, 'remaining': max(0, len(todo) - cfg.llm_batch_size)}
-
-
-JOBS = {'deliver_reminders': deliver_reminders, 'scan_care_gaps': scan_care_gaps, 'word_recommendations': word_recommendations}
-
-_kick_lock = threading.Lock()
-
-
-def kick_wording() -> bool:
-    """Start a background wording run now (non-blocking, at most one at a time) – used after scans, imports and demo loads
-    so new alerts get their AI wording within seconds instead of waiting for the next scheduler tick."""
-    if not get_settings().llm_configured or get_settings().env == 'test' or not _kick_lock.acquire(blocking=False):
-        return False
-
-    def run():
-        try:
-            with SessionLocal() as db:
-                word_recommendations(db)
-        except Exception:
-            log.exception('Background wording run failed')
-        finally:
-            _kick_lock.release()
-    threading.Thread(target=run, name='careflow-wording', daemon=True).start()
-    return True
+# Phase 0 (on-demand AI): the former 'word_recommendations' job and kick_wording() background thread were removed –
+# no scheduled or automatic job may call the LLM.
+JOBS = {'deliver_reminders': deliver_reminders, 'scan_care_gaps': scan_care_gaps}
 
 
 def run_all(trigger: str = 'scheduler') -> dict:
@@ -112,7 +84,7 @@ def run_all(trigger: str = 'scheduler') -> dict:
 
 def last_runs(db: Session) -> dict:
     row = db.get(AppSetting, 'jobs')
-    return row.value if row else {}
+    return {k: v for k, v in (row.value or {}).items() if k in JOBS} if row else {}      # hides runs of removed jobs
 
 
 class EmbeddedScheduler:

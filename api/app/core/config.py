@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     # tried in order when the main model is overloaded (503/504), rate-limited (429) or not available to the key (404)
     gemini_fallback_models: list[str] = ['gemini-3.6-flash', 'gemini-3.5-flash-lite']
     llm_timeout_seconds: int = 30
-    llm_batch_size: int = 15                     # alerts worded per background run
+    # The LLM is called only when a person asks for it (on-demand). There is no background wording job.
 
     @property
     def llm_configured(self) -> bool:

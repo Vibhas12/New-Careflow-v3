@@ -59,6 +59,7 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
         <li>Prescriptions are doctor-entered only. The AI never diagnoses or prescribes.</li>
         <li>Reminders, SMS, email and app notifications are <b>simulated</b>; nothing is actually sent.</li>
         <li>The AI Care Assistant is template-based: no language model is connected, and its proposals need approval.</li>
+        <li>The language model (Gemini) is called <b>only when you click</b> an AI button such as <i>Generate with AI</i>. Scans, imports and page loads never call it.</li>
       </ul>
       <p className="mut sm">Roles: Care Coordinator, Doctor, Administrator. Use the profile menu (top right) to switch role.</p>
     </Modal>
