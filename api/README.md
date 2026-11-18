@@ -94,7 +94,7 @@ appointment / test reminders (created and withdrawn; *delivery* moves to the pha
 after an import, on the scheduler, and on demand. Open → Actioned (approved → task) / Dismissed (reason) / Resolved (automatic when the rule
 stops firing; re-opens if it fires again). Each patient gets an advisory `suggestedPriority`; the stored priority is never changed by rules.
 
-**Background jobs** (`app/jobs.py`): simulated reminder delivery and a full care-gap scan.
+**Background jobs** (`app/jobs.py`): simulated reminder delivery and a full care-gap scan. No job calls the LLM.
 ```powershell
 # development: runs inside the API process (CAREFLOW_SCHEDULER=embedded, every CAREFLOW_SCHEDULER_INTERVAL_SECONDS=300)
 # production / several API instances: CAREFLOW_SCHEDULER=off on the API, plus exactly one worker:
@@ -119,9 +119,10 @@ The rule engine still decides that a gap exists, its priority and its evidence; 
 rationale and a task title (structured JSON output), and a person still approves, modifies or dismisses it.
 * **Data sent:** de-identified facts only – category, rule, priority, reason, evidence, department, primary condition, the rule's template
   action. No names, IDs, dates of birth or contact details (names/IDs inside rule text are replaced before sending).
-* **When:** automatically in the background for new or changed alerts (after scans, imports, demo loads and on the scheduler), and on
-  demand with *Generate / Regenerate with AI* (`POST /api/care-gaps/{id}/recommendation`). Wording is stored on the alert with model and
-  time, and hidden as soon as the alert's facts change until it is re-worded.
+* **When: on demand only.** The model is called solely when a person clicks *Generate / Regenerate with AI*
+  (`POST /api/care-gaps/{id}/recommendation`) – one click, one request. Scans, imports, demo loads, list views and scheduled jobs never
+  call it. Until then the card shows the rule template. Wording is stored on the alert with model and time, and hidden as soon as the
+  alert's facts change (`aiStatus: stale`) until someone regenerates it. `aiStatus`: `ready` · `none` (never requested) · `stale` · `error` · `off` (no key).
 * **Resilience:** one attempt per model, then the fallback models (`CAREFLOW_GEMINI_FALLBACK_MODELS`) on 404/429/5xx/timeouts; if all
   fail the card shows the rule template ("AI wording unavailable").
 * **Configuration:** `CAREFLOW_GEMINI_API_KEY` in `api/.env` (git-ignored – never in code), `CAREFLOW_GEMINI_MODEL`
