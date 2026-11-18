@@ -81,6 +81,10 @@ class SummaryAgent(Agent):
         valid = {s['n'] for s in context['sources']}
         # the records themselves contain a few unsourced statements (e.g. "No pending diagnostic results.") – restating one is fine
         unsourced_ok = {(f['section'], f['kind']) for f in context['facts'] if not f['sources']}
+        # 3 sentences per statement, or as many as the longest recorded fact in that section (a restated consultation note)
+        longest: dict[str, int] = {}
+        for f in context['facts']:
+            longest[f['section']] = max(longest.get(f['section'], 3), verifier.sentence_count(f['text']))
         issues: list[str] = []
         if not 1 <= len(out.overview) <= 3:
             issues.append(f'overview must have 1-3 statements (has {len(out.overview)})')
@@ -93,7 +97,7 @@ class SummaryAgent(Agent):
                 if bad := [n for n in s.sources if n not in valid]:
                     issues.append(f'{part}: cites a source that does not exist ({", ".join(map(str, bad))})')
                 issues += [f'{part}: {i}' for i in verifier.check_wording(s.text, context)]
-                issues += [f'{part}: {i}' for i in verifier.sentence_limit(s.text, 3)]
+                issues += [f'{part}: {i}' for i in verifier.sentence_limit(s.text, longest.get(part, 3))]
         issues += coverage(out, context)
         return list(dict.fromkeys(issues))
 

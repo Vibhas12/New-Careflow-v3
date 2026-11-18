@@ -148,8 +148,12 @@ def urgency_matches(text: str, priority: str | None) -> list[str]:
     return []
 
 
+def sentence_count(text: str) -> int:
+    return len([s for s in re.split(r'(?<![Dd]r\.)(?<![Mm]rs\.)(?<=[.!?])\s+', (text or '').strip()) if s])
+
+
 def sentence_limit(text: str, limit: int) -> list[str]:
-    n = len([s for s in re.split(r'(?<![Dd]r\.)(?<![Mm]rs\.)(?<=[.!?])\s+', text.strip()) if s])
+    n = sentence_count(text)
     return [f'too long ({n} sentences, at most {limit})'] if n > limit else []
 
 
