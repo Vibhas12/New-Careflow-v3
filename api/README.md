@@ -34,7 +34,7 @@ For PostgreSQL see `docker-compose.yml` and `api/.env.example`.
 
 ## Tests
 ```powershell
-cd api; .venv\Scripts\python -m pytest        # 107 tests: auth, scoping, priority, immutability, workflows, import, care gaps, jobs, dashboard, demo, assistant, agents
+cd api; .venv\Scripts\python -m pytest        # 132 tests: auth, scoping, priority, immutability, workflows, import, care gaps, jobs, dashboard, demo, assistant, agents
 cd web; npm run build                          # type-check + production build
 ```
 
@@ -122,7 +122,7 @@ rationale and a task title (structured JSON output), and a person still approves
 * **When: on demand only.** The model is called solely when a person clicks *Generate / Regenerate with AI*
   (`POST /api/care-gaps/{id}/recommendation`) – one click, one request. Scans, imports, demo loads, list views and scheduled jobs never
   call it. Until then the card shows the rule template. Wording is stored on the alert with model and time, and hidden as soon as the
-  alert's facts change (`aiStatus: stale`) until someone regenerates it. `aiStatus`: `ready` · `none` (never requested) · `stale` · `error` · `off` (no key).
+  alert's facts change (`aiStatus: stale`) until someone regenerates it. `aiStatus`: `ready` · `none` (never requested) · `stale` · `withheld` (failed the safety check) · `error` · `off` (no key / switched off).
 * **Resilience:** one attempt per model, then the fallback models (`CAREFLOW_GEMINI_FALLBACK_MODELS`) on 404/429/5xx/timeouts; if all
   fail the card shows the rule template ("AI wording unavailable").
 * **Configuration:** `CAREFLOW_GEMINI_API_KEY` in `api/.env` (git-ignored – never in code), `CAREFLOW_GEMINI_MODEL`
@@ -138,6 +138,7 @@ Every LLM call in the app goes through one orchestrator; agents are small declar
 | `base.py` | `Agent` base class + registry |
 | `limits.py` | kill switch, per-user hourly cap, cooldown for everyone after a 429 on every model |
 | `orchestrator.py` | `run()`: switch → limits → privacy check of the input → **one** provider request → `verify()` + output leak check → run log |
+| `verifier.py` | **Safety & grounding verifier** (phase 2, code only – no LLM): withholds output that gives clinical advice (diagnosis, interpretation, prescribing, dose / medication changes, emergency referral), sets or changes priority, claims actions or contact attempts not in the facts, mentions dates, values or tests that are not in the facts, leaves a doctor's decision without naming a doctor, contradicts the rule's priority, or runs over 3 sentences |
 | `testing.py` | `FakeLLM` (pytest fixture `fake_llm`) – tests never touch the network |
 
 **Run log** (`agent_runs`, migration 0006): who asked, which agent, status (`ok` / `failed` / `withheld` / `blocked` / `limited` /
@@ -147,6 +148,9 @@ Every LLM call in the app goes through one orchestrator; agents are small declar
 |---|---|---|
 | GET | `/api/agents` | availability of each agent and the caller's remaining hourly quota |
 | GET | `/api/agents/runs?limit` | own runs (coordinator, doctor); all runs without patient references (administrator) |
+
+Withheld output is never shown or stored on the record; the alert shows `aiStatus: withheld` ("AI wording withheld by the safety check")
+with the reasons, the rule template stays, and the reasons are kept in `agent_runs.issues`.
 
 Errors: switched off / no key → **503**; hourly cap or provider cooldown → **429** with `Retry-After`; provider failure or output
 withheld by a check → **502**, and the rule template stays on screen. Settings: `CAREFLOW_AGENTS_ENABLED`, `CAREFLOW_AGENTS_DISABLED`,

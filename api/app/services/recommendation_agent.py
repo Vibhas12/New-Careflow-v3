@@ -20,7 +20,7 @@ import json
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.agents import limits, orchestrator
+from app.agents import limits, orchestrator, verifier
 from app.agents.base import Agent, register
 from app.agents.privacy import deidentify as _deidentify
 from app.models import CareGapAlert, Patient, User
@@ -66,8 +66,14 @@ class RecommendationAgent(Agent):
         return rec
 
     def verify(self, rec: Recommendation, context: dict) -> list[str]:
-        # phase 2 (safety & grounding verifier) adds the grounding and clinical-advice checks here
-        return ['empty recommendation or task title'] if not rec.recommendation or not rec.task_title else []
+        """Safety & grounding verifier (agents/verifier.py) – every problem withholds the wording."""
+        if not rec.recommendation or not rec.task_title:
+            return ['empty recommendation or task title']
+        pri, role = context.get('priority'), context.get('responsible_role')
+        issues = verifier.check_wording(' '.join((rec.recommendation, rec.rationale, rec.task_title)), context, priority=pri, role=role)
+        issues += verifier.responsible_role(f'{rec.recommendation} {rec.task_title}', role)
+        issues += verifier.sentence_limit(rec.recommendation, 3)
+        return list(dict.fromkeys(issues))                  # unique, in order
 
 
 def source_hash(a: CareGapAlert) -> str:
@@ -115,6 +121,7 @@ def word(db: Session, a: CareGapAlert, user: User, *, commit: bool = True) -> bo
 def status(a: CareGapAlert) -> str:
     """On demand only – nothing is generated automatically, so there is no 'pending' state.
     'ready' – wording matches the current facts · 'off' – no key, or the agent is switched off (stored wording hidden too) ·
+    'withheld' – the last generated wording failed the safety & grounding checks (not shown) ·
     'error' – the last requested attempt failed · 'stale' – wording exists but the alert's facts changed (offer Regenerate) ·
     'none' – never requested (offer Generate). In every state except 'ready' the UI shows the rule template."""
     if not limits.is_enabled(NAME):
@@ -122,5 +129,5 @@ def status(a: CareGapAlert) -> str:
     if is_current(a):
         return 'ready'
     if a.ai_error:
-        return 'error'
+        return 'withheld' if a.ai_error.startswith(orchestrator.WITHHELD) else 'error'
     return 'stale' if a.ai_text else 'none'

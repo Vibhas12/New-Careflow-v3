@@ -470,7 +470,7 @@ class AlertOut(Schema):
     ai_task_title: str | None = None
     ai_model: str | None = None
     ai_generated_at: datetime | None = None
-    ai_status: Literal['ready', 'none', 'stale', 'error', 'off'] = 'off'
+    ai_status: Literal['ready', 'none', 'stale', 'withheld', 'error', 'off'] = 'off'
     ai_error: str | None = None
 
 

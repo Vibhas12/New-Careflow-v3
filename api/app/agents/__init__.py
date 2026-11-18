@@ -5,6 +5,8 @@
     base.py          Agent definition + registry
     limits.py        kill switch, per-user hourly cap, 429 cooldown
     orchestrator.py  run(): switch → limits → privacy → one provider request → verify → run log
+    verifier.py      safety & grounding checks (phase 2): clinical advice, priority changes, invented actions, ungrounded
+                     dates / values / tests, responsible role, urgency vs priority, length
     testing.py       FakeLLM for tests
 
 Rules for every agent: on demand only (a person's click), at most one provider request sequence per click, de-identified input,

@@ -25,6 +25,7 @@ from app.models import AgentRun, Patient, User
 from app.services.common import utcnow
 
 log = logging.getLogger('careflow.agents')
+WITHHELD = 'AI output withheld by safety check'          # prefix of the error stored when verify() rejects an output
 
 
 @dataclass
@@ -86,7 +87,7 @@ def run(db: Session, user: User, agent_name: str, context: dict, *, patient: Pat
     issues = list(a.verify(out, context))
     issues += [f'output contains {k}' for k in find_leaks(out.model_dump_json(), patient)]
     if issues:
-        msg = 'AI output withheld by safety check: ' + '; '.join(issues)
+        msg = f'{WITHHELD}: ' + '; '.join(issues)
         log.warning('Agent %s output withheld for %s: %s', a.name, entity, issues)
         r = rec('withheld', input_hash=h, model=res.model, attempts=res.attempts, error=msg, issues=issues)
         return AgentResult(False, 'withheld', model=res.model, error=msg, issues=issues, run_id=r.id)
