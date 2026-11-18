@@ -13,22 +13,24 @@ EMAIL = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
 PHONE_CANDIDATE = re.compile(r'\+?\d[\d\s().-]{7,}\d')
 
 
-def deidentify(text: str, p: Patient | None) -> str:
+def deidentify(text: str, p: Patient | None, replacement: str = 'the patient') -> str:
     if not text:
         return text
     if p:
+        if p.id:
+            text = re.sub(rf'\b{re.escape(p.id)}\b', replacement, text, flags=re.I)
         for s in sorted({p.full_name, p.first_name, p.last_name} - {None}, key=len, reverse=True):
-            if s and len(s) > 1:
-                text = re.sub(re.escape(s), 'the patient', text, flags=re.I)
-    return PATIENT_ID.sub('the patient', text)
+            if s and len(s) > 1:                              # whole words only: "Ann" must not touch "Annual"
+                text = re.sub(rf'(?<!\w){re.escape(s)}(?!\w)', replacement, text, flags=re.I)
+    return PATIENT_ID.sub('a patient', text) if replacement != 'the patient' else PATIENT_ID.sub('the patient', text)
 
 
-def scrub(text: str, p: Patient | None) -> str:
+def scrub(text: str, p: Patient | None, replacement: str = 'the patient') -> str:
     """deidentify() plus removal of contact details, date of birth and address from free text (consultation notes,
     imported document extracts) so that a single stray identifier does not block the whole request."""
     if not text:
         return text
-    text = deidentify(text, p)
+    text = deidentify(text, p, replacement)
     text = EMAIL.sub('[email removed]', text)
     text = PHONE_CANDIDATE.sub(lambda m: '[number removed]' if sum(c.isdigit() for c in m.group()) >= 10 else m.group(), text)
     if p is not None:
@@ -46,6 +48,24 @@ def _dob_forms(p: Patient) -> set[str]:
         return set()
     d = p.dob
     return {d.isoformat(), d.strftime('%d/%m/%Y'), f'{d.day} {d.strftime("%b")} {d.year}', f'{d.day} {d.strftime("%B")} {d.year}'}
+
+
+def find_leaks_many(text: str, patients: list[Patient]) -> list[str]:
+    """Leak check across several patients (worklist questions): generic identifiers plus each patient's full name, ID,
+    date of birth and contact details. Single first or last names are not checked here – with many patients they collide
+    with ordinary words; every text sent was already built through deidentify()/scrub() for its own patient."""
+    found = set(find_leaks(text))
+    low = text.lower()
+    for p in patients:
+        if p.full_name and p.full_name.lower() in low:
+            found.add('patient or contact name')
+        if p.id and re.search(rf'\b{re.escape(p.id)}\b', text, re.I):
+            found.add('patient ID')
+        if any(f in text for f in _dob_forms(p)):
+            found.add('date of birth')
+        if p.email and p.email.lower() in low:
+            found.add('email address')
+    return sorted(found)
 
 
 def find_leaks(text: str, p: Patient | None = None) -> list[str]:

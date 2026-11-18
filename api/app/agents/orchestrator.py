@@ -8,6 +8,8 @@ Order of steps (each one recorded in agent_runs, never with prompt or output tex
   5. verify      – agent.verify() + identifiers in the output    → 'withheld' result; output discarded
   6. success     → 'ok' result with the validated output
 The caller (a service) decides what to store and commits; on 'failed' / 'blocked' / 'withheld' it keeps the rule template.
+Transactions: run() commits the caller's pending work just before the provider request, so no transaction is open while
+waiting for the model; callers must not rely on rolling back changes made before run().
 There is no chaining: one run() is at most one provider request sequence, and nothing here triggers another run.
 """
 import hashlib
@@ -20,7 +22,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.agents import base, limits, llm
-from app.agents.privacy import find_leaks
+from app.agents.privacy import find_leaks, find_leaks_many
 from app.models import AgentRun, Patient, User
 from app.services.common import utcnow
 
@@ -50,10 +52,14 @@ def _record(db: Session, *, agent: str, user: User | None, patient: Patient | No
     return run
 
 
-def run(db: Session, user: User, agent_name: str, context: dict, *, patient: Patient | None = None, entity: str | None = None) -> AgentResult:
+def run(db: Session, user: User, agent_name: str, context: dict, *, patient: Patient | None = None, entity: str | None = None,
+        patients: list[Patient] | None = None) -> AgentResult:
+    """`patient` – the one patient the request is about (strict leak checks: names, DOB, address, contacts).
+    `patients` – several patients (a worklist question): leak checks for each one's full name, ID, DOB and contacts."""
     a = base.get(agent_name)
     t0 = time.monotonic()
     rec = lambda status, **kw: _record(db, agent=a.name, user=user, patient=patient, entity=entity, status=status, t0=t0, **kw)
+    leaks_in = (lambda text: find_leaks_many(text, patients)) if patients else (lambda text: find_leaks(text, patient))
 
     reason = limits.unavailable_reason(a.name)                                   # 1. switch
     if reason:
@@ -69,13 +75,16 @@ def run(db: Session, user: User, agent_name: str, context: dict, *, patient: Pat
 
     prompt = a.prompt(context)
     h = hashlib.sha256(prompt.encode()).hexdigest()
-    leaks = find_leaks(json.dumps(context, ensure_ascii=False), patient)        # 3. privacy (input)
+    leaks = leaks_in(json.dumps(context, ensure_ascii=False))                    # 3. privacy (input)
     if leaks:
         msg = 'Not sent to the AI: the input still contained ' + ', '.join(leaks)
         log.warning('Agent %s blocked for %s: %s', a.name, entity, leaks)
         r = rec('blocked', input_hash=h, error=msg, issues=leaks)
         return AgentResult(False, 'blocked', error=msg, issues=leaks, run_id=r.id)
 
+    # Never hold a database transaction open while waiting for the network: a slow model call would keep SQLite's
+    # read snapshot (or a PostgreSQL "idle in transaction") alive, and the next write could fail with "database is locked".
+    db.commit()
     try:                                                                         # 4. provider
         res = llm.generate(system=a.system, prompt=prompt, schema=a.output, temperature=a.temperature, max_output_tokens=a.max_output_tokens)
     except llm.LLMUnavailable as e:
@@ -85,7 +94,7 @@ def run(db: Session, user: User, agent_name: str, context: dict, *, patient: Pat
 
     out = a.clean(res.output)                                                    # 5. verify
     issues = list(a.verify(out, context))
-    issues += [f'output contains {k}' for k in find_leaks(out.model_dump_json(), patient)]
+    issues += [f'output contains {k}' for k in leaks_in(out.model_dump_json())]
     if issues:
         msg = f'{WITHHELD}: ' + '; '.join(issues)
         log.warning('Agent %s output withheld for %s: %s', a.name, entity, issues)

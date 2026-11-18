@@ -20,14 +20,25 @@ export interface Proposal {
   id: string; type: 'task' | 'reminder'; patientId: string; title: string; assignee: string | null; assigneeName: string | null
   due: string | null; priority: Priority; channel: string | null; message: string | null; status: 'Proposed' | 'Approved' | 'Rejected'; resultRef: string | null
 }
+export interface AnswerStatement { text: string; kind: Fact['kind']; sources: number[]; patientId: string | null }
 export type Block =
   | { type: 'table'; head: string[]; rows: { t: string; pid: string | null }[][] }
   | { type: 'brief'; brief: Brief }
   | { type: 'gapActions'; alerts: Alert[] }
   | { type: 'proposals'; proposals: Proposal[] }
-export interface ChatMessage { id: number; ts: string; role: 'user' | 'ai'; text: string; patientId: string | null; blocks: Block[]; trace: string[] }
+  | { type: 'answer'; statements: AnswerStatement[]; evidence: Brief['evidence'] }
+export interface ChatMessage {
+  id: number; ts: string; role: 'user' | 'ai'; text: string; patientId: string | null; blocks: Block[]; trace: string[]
+  ai: boolean; model: string | null; offerAi: boolean
+}
+export interface AgentsStatus {
+  enabled: boolean; onDemandOnly: boolean
+  agents: { name: string; label: string; enabled: boolean; reason: string | null }[]
+  usage: { perHour: number; usedThisHour: number; remaining: number; cooldownUntil: string | null } | null
+}
 
 export const usePrompts = () => useQuery({ queryKey: ['assistant', 'prompts'], queryFn: () => api<string[]>('/api/assistant/prompts') })
+export const useAgents = () => useQuery({ queryKey: ['agents'], queryFn: () => api<AgentsStatus>('/api/agents'), staleTime: 30_000 })
 export const useChat = () => useQuery({ queryKey: ['assistant', 'messages'], queryFn: () => api<ChatMessage[]>('/api/assistant/messages') })
 
 /** Explicit "Generate / Regenerate summary" – fetched on demand (and audited), not on page load. */
@@ -54,8 +65,8 @@ export function useAssistantActions() {
   const refresh = useRefresh()
   return {
     ask: useMutation({
-      mutationFn: (b: { text: string; patientId?: string }) => api<ChatMessage>('/api/assistant/messages', { method: 'POST', body: b }),
-      onSuccess: () => qc.invalidateQueries({ queryKey: ['assistant', 'messages'] }),
+      mutationFn: (b: { text: string; patientId?: string; ai?: boolean }) => api<ChatMessage>('/api/assistant/messages', { method: 'POST', body: b }),
+      onSuccess: () => { qc.invalidateQueries({ queryKey: ['assistant', 'messages'] }); qc.invalidateQueries({ queryKey: ['agents'] }) },
     }),
     clear: useMutation({ mutationFn: () => api<void>('/api/assistant/messages', { method: 'DELETE' }), onSuccess: () => qc.invalidateQueries({ queryKey: ['assistant', 'messages'] }) }),
     decide: useMutation({

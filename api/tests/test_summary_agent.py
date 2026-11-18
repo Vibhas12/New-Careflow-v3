@@ -114,7 +114,7 @@ def test_switch_off_summary_only(coord, pid, llm, monkeypatch):
     assert coord.get(f'/api/assistant/patients/{pid}/summary').json()['ai']['status'] == 'off'
     assert coord.post(f'/api/assistant/patients/{pid}/summary/ai').status_code == 503
     names = {a['name']: a['enabled'] for a in coord.get('/api/agents').json()['agents']}
-    assert names == {'recommendation': True, 'summary': False}
+    assert names == {'recommendation': True, 'summary': False, 'answer': True}
 
 
 # ---------------------------------------------------------------- verifier

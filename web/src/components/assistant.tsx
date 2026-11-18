@@ -83,7 +83,26 @@ function Proposals({ items }: { items: Proposal[] }) {
   ))}</>
 }
 
+/** LLM answer (phase 4): labelled statements with numbered source chips, then the cited records. */
+function AnswerView({ b }: { b: Extract<Block, { type: 'answer' }> }) {
+  const ev = new Map(b.evidence.map((e) => [e.n, e]))
+  return (
+    <div className="mt2">
+      {b.statements.map((s, i) => (
+        <div key={i} className={`fact ${s.kind}`}>
+          <span className={`tag ${TAG[s.kind][0]}`}>{TAG[s.kind][1]}</span>{s.text}
+          {s.sources.map((n) => { const e = ev.get(n); return <span key={n} className="chip" title={`${e?.label ?? ''} ${e?.ref ?? ''} · ${fmtDateTime(e?.ts)}`}>{n}</span> })}
+          {s.patientId && <> <Link className="sm" to={`/patients/${s.patientId}`}>Open profile</Link></>}
+        </div>
+      ))}
+      {b.evidence.length > 0 && <details className="mt2"><summary className="sm">Sources ({b.evidence.length})</summary><div className="list">{b.evidence.map((e) => (
+        <div key={e.n}><span className="chip" style={{ margin: 0 }}>{e.n}</span><span className="grow sm"><b>{e.label}</b> {e.ref}</span><span className="sm mut">{fmtDateTime(e.ts)}</span></div>))}</div></details>}
+    </div>
+  )
+}
+
 export function ChatBlock({ b }: { b: Block }) {
+  if (b.type === 'answer') return <AnswerView b={b} />
   if (b.type === 'table') return (
     <div className="tw mt2"><table className="tbl"><thead><tr>{b.head.map((h) => <th key={h}>{h}</th>)}</tr></thead>
       <tbody>{b.rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j}>{c.pid ? <Link className="b" to={`/patients/${c.pid}`}>{c.t}</Link> : c.t}</td>)}</tr>)}</tbody></table></div>

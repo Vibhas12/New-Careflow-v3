@@ -17,6 +17,7 @@ router = APIRouter(prefix='/api/assistant', tags=['ai assistant'])
 class AskIn(BaseModel):
     text: str = Field(min_length=2, max_length=500)
     patientId: str | None = None
+    ai: bool = False                     # "Ask AI": answer with the LLM answer agent (one request); otherwise template agents
 
 
 def _proposal_out(db, x: AssistantProposal) -> dict:
@@ -37,7 +38,9 @@ def _message_out(db, m: AssistantMessage) -> dict:
             blocks.append({'type': 'proposals', 'proposals': [_proposal_out(db, x) for x in db.execute(select(AssistantProposal).where(AssistantProposal.id.in_(b['proposalIds']))).scalars()]})
         else:
             blocks.append(b)
-    return {'id': m.id, 'ts': m.ts, 'role': m.role, 'text': m.text, 'patientId': m.patient_id, 'blocks': blocks, 'trace': (m.payload or {}).get('trace', [])}
+    pl = m.payload or {}
+    return {'id': m.id, 'ts': m.ts, 'role': m.role, 'text': m.text, 'patientId': m.patient_id, 'blocks': blocks, 'trace': pl.get('trace', []),
+            'ai': bool(pl.get('ai')), 'model': pl.get('model'), 'offerAi': bool(pl.get('offerAi'))}
 
 
 @router.get('/prompts')
@@ -52,7 +55,7 @@ def messages(user: CurrentUser, db: DB):
 
 @router.post('/messages')
 def ask(body: AskIn, user: CurrentUser, db: DB):
-    return _message_out(db, svc.ask(db, user, body.text, body.patientId))
+    return _message_out(db, svc.ask(db, user, body.text, body.patientId, body.ai))
 
 
 @router.delete('/messages', status_code=204)

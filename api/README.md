@@ -34,7 +34,7 @@ For PostgreSQL see `docker-compose.yml` and `api/.env.example`.
 
 ## Tests
 ```powershell
-cd api; .venv\Scripts\python -m pytest        # 148 tests: auth, scoping, priority, immutability, workflows, import, care gaps, jobs, dashboard, demo, assistant, agents
+cd api; .venv\Scripts\python -m pytest        # 164 tests: auth, scoping, priority, immutability, workflows, import, care gaps, jobs, dashboard, demo, assistant, agents
 cd web; npm run build                          # type-check + production build
 ```
 
@@ -151,6 +151,16 @@ and the phase 2 content checks apply to every statement. Suggested next steps st
 |---|---|---|
 | GET | `/api/assistant/patients/{id}/summary` | template summary (no LLM) + `ai` = stored AI summary state (`ready` / `none` / `stale` / `withheld` / `error` / `off`) |
 | POST | `/api/assistant/patients/{id}/summary/ai` | write the AI summary now (one request); 503 off · 429 limit · 502 failed / withheld (template stays) |
+
+**Ask AI in the assistant chat (phase 4, `services/answer_agent.py`).** *Send* keeps the template agents (no LLM). *Ask AI*
+(`POST /api/assistant/messages` with `"ai": true`) runs: orchestrator routing (code – a named or selected patient → that patient's
+facts incl. rule-based next steps; otherwise the worklist of every patient in scope) → Context (patients become "Patient A, B…",
+staff "Staff 1 (doctor)…", the user "you" – in the facts **and** the question) → answer agent (one Gemini request: statements citing
+sources + up to 3 drafted tasks / reminders) → verifier (sources and aliases exist, phase 2 content checks on every statement, title and
+message; leak checks across every patient in scope). Aliases are mapped back to names only after verification; drafts become
+`assistant_proposals` in status *Proposed*. If the agent is off, limited, fails or is withheld, the template answer is returned with a
+note – Ask AI never returns an error. Template replies that match no intent offer *Ask AI instead*.
+The orchestrator commits before the provider request, so no database transaction is open while waiting for the model.
 
 **Run log** (`agent_runs`, migration 0006): who asked, which agent, status (`ok` / `failed` / `withheld` / `blocked` / `limited` /
 `disabled`), model and fallback attempts, error, time taken, hash of the de-identified input. Prompts and outputs are never stored there.

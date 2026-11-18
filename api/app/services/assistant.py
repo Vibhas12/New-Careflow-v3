@@ -296,18 +296,59 @@ def answer(db: Session, user: User, text: str, context_pid: str | None = None) -
     msg['intro'] = ('I can answer questions grounded in the records you are authorised to see. I couldn’t match that to a supported request, and I won’t '
                     'guess. Try one of the suggested questions, name a patient (e.g. “Summarise Sarah Thompson’s patient journey”), or ask me to draft a task or reminder.')
     trace.append('Context Agent: no supported intent matched – no data returned.')
+    msg['offerAi'] = True                                   # the UI offers "Ask AI instead" (only if the answer agent is on)
     return msg
 
 
 # ---------------------------------------------------------------- conversation & proposals
-def ask(db: Session, user: User, text: str, context_pid: str | None) -> AssistantMessage:
+def _route_patient(db: Session, user: User, text: str, context_pid: str | None, pool: list[Patient]) -> Patient | None:
+    """Orchestrator routing (code): a patient named in the question, else the selected context patient when the question
+    refers to "this patient / them / him / her" – the same rule the template agents use."""
+    low = text.lower()
+    byid = {p.id: p for p in pool}
+    return find_patient(text, pool) or (byid.get(context_pid) if context_pid and re.search(r'\b(this|the) patient\b|\bthem\b|\bhim\b|\bher\b|\btheir\b', low) else None)
+
+
+def ask(db: Session, user: User, text: str, context_pid: str | None, use_ai: bool = False) -> AssistantMessage:
+    """Send → template agents (no LLM). Ask AI (use_ai) → orchestrator → Context → Answer agent (one Gemini request) → verifier;
+    on any AI problem the template answer is returned with a note, so the user always gets an answer."""
     _need(user)
     text = text.strip()
-    db.add(AssistantMessage(user_id=user.id, ts=utcnow(), role='user', text=text))
-    m = answer(db, user, text, context_pid)
-    ai = AssistantMessage(user_id=user.id, ts=utcnow(), role='ai', text=m['intro'], patient_id=m['patientId'], payload={'blocks': m['blocks'], 'trace': m['trace']})
+    question = AssistantMessage(user_id=user.id, ts=utcnow(), role='user', text=text, payload={'ai': use_ai})
+    db.add(question)
+    m = None
+    note = None
+    if use_ai:
+        from app.agents.limits import AgentError
+        from app.services import answer_agent
+        pool = _pool(db, user)
+        try:
+            res = answer_agent.ask_ai(db, user, text, _route_patient(db, user, text, context_pid, pool), pool)
+            if res.get('failed') is None:
+                m = res
+            else:
+                note = ('The AI answer was withheld by the safety check' if res['status'] == 'withheld' else 'The AI could not answer') + \
+                       ' – here is the standard answer instead.'
+                ai_trace = res['trace']
+        except AgentError as e:
+            note, ai_trace = f'{e.message} – here is the standard answer instead.', [f'Orchestrator: AI not used – {e.message}']
+        except Exception:                                    # never a 500 for Ask AI: log, roll back, answer from the templates
+            import logging
+            logging.getLogger('careflow.agents').exception('Ask AI failed unexpectedly')
+            db.rollback()
+            from sqlalchemy import inspect as sa_inspect
+            if not sa_inspect(question).persistent:          # not yet committed by the orchestrator → add it again
+                db.add(AssistantMessage(user_id=user.id, ts=utcnow(), role='user', text=text, payload={'ai': use_ai}))
+            note, ai_trace = 'The AI could not answer – here is the standard answer instead.', ['Orchestrator: AI request failed unexpectedly (logged).']
+    if m is None:
+        m = answer(db, user, text, context_pid)
+        if note:
+            m['intro'] = f'{note} {m["intro"]}'
+            m['trace'] = ai_trace + m['trace']
+    payload = {'blocks': m['blocks'], 'trace': m['trace'], 'ai': bool(m.get('ai')), 'model': m.get('model'), 'offerAi': bool(m.get('offerAi'))}
+    ai = AssistantMessage(user_id=user.id, ts=utcnow(), role='ai', text=m['intro'], patient_id=m['patientId'], payload=payload)
     db.add(ai)
-    audit(db, user, 'AI assistant query', patient_id=m['patientId'], detail=text[:100])
+    audit(db, user, 'AI assistant query (LLM)' if m.get('ai') else 'AI assistant query', patient_id=m['patientId'], detail=text[:100])
     db.commit()
     return ai
 
