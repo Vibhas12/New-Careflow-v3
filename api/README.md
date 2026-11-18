@@ -34,7 +34,7 @@ For PostgreSQL see `docker-compose.yml` and `api/.env.example`.
 
 ## Tests
 ```powershell
-cd api; .venv\Scripts\python -m pytest        # 87 tests: auth, scoping, priority, immutability, workflows, import, care gaps, jobs, dashboard, demo, assistant
+cd api; .venv\Scripts\python -m pytest        # 107 tests: auth, scoping, priority, immutability, workflows, import, care gaps, jobs, dashboard, demo, assistant, agents
 cd web; npm run build                          # type-check + production build
 ```
 
@@ -127,6 +127,30 @@ rationale and a task title (structured JSON output), and a person still approves
   fail the card shows the rule template ("AI wording unavailable").
 * **Configuration:** `CAREFLOW_GEMINI_API_KEY` in `api/.env` (git-ignored – never in code), `CAREFLOW_GEMINI_MODEL`
   (default `gemini-3.5-flash`), `CAREFLOW_LLM_ENABLED`. Tests never call the real model.
+
+### Agent layer (multi-agent phase 1 – `app/agents/`)
+Every LLM call in the app goes through one orchestrator; agents are small declarative classes (system prompt, output schema,
+`clean()`, `verify()`), registered by name.
+| Module | Role |
+|---|---|
+| `llm.py` | Gemini provider: one structured-output request, model fallback on 404/429/5xx/timeouts, stop on 400/401/403 |
+| `privacy.py` | `deidentify()` and `find_leaks()` (patient ID, email, phone, name, date of birth, address – reports kinds, never values) |
+| `base.py` | `Agent` base class + registry |
+| `limits.py` | kill switch, per-user hourly cap, cooldown for everyone after a 429 on every model |
+| `orchestrator.py` | `run()`: switch → limits → privacy check of the input → **one** provider request → `verify()` + output leak check → run log |
+| `testing.py` | `FakeLLM` (pytest fixture `fake_llm`) – tests never touch the network |
+
+**Run log** (`agent_runs`, migration 0006): who asked, which agent, status (`ok` / `failed` / `withheld` / `blocked` / `limited` /
+`disabled`), model and fallback attempts, error, time taken, hash of the de-identified input. Prompts and outputs are never stored there.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/agents` | availability of each agent and the caller's remaining hourly quota |
+| GET | `/api/agents/runs?limit` | own runs (coordinator, doctor); all runs without patient references (administrator) |
+
+Errors: switched off / no key → **503**; hourly cap or provider cooldown → **429** with `Retry-After`; provider failure or output
+withheld by a check → **502**, and the rule template stays on screen. Settings: `CAREFLOW_AGENTS_ENABLED`, `CAREFLOW_AGENTS_DISABLED`,
+`CAREFLOW_AGENT_CALLS_PER_USER_PER_HOUR` (30), `CAREFLOW_AGENT_COOLDOWN_SECONDS` (60).
 
 **Removed in phase 4:** Communications, Recovery Tracker and Patient Experience (migration 0004 drops `communications`, `feedback`
 and the patient `outcome_*` columns). Call outcomes and manual reminders are recorded in the audit trail / reminders table instead.

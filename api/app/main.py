@@ -7,7 +7,8 @@ from fastapi.responses import JSONResponse
 
 from contextlib import asynccontextmanager
 
-from app.api.routes import appointments, assistant, auth, care_gaps, dashboard, demo, diagnostics, ingest, notifications, patients, system, tasks
+from app.agents.limits import AgentError
+from app.api.routes import agents, appointments, assistant, auth, care_gaps, dashboard, demo, diagnostics, ingest, notifications, patients, system, tasks
 from app.core.config import get_settings
 from app.jobs import maybe_start_embedded
 
@@ -39,7 +40,7 @@ SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
 
 def create_app() -> FastAPI:
     cfg = get_settings()
-    app = FastAPI(title='CareFlow API', version='3.0.0', lifespan=lifespan,
+    app = FastAPI(title='CareFlow API', version='3.1.0', lifespan=lifespan,
                   description='Care-coordination API. All data in demo environments is fictional.',
                   docs_url=None if cfg.env == 'production' else '/api/docs', openapi_url=None if cfg.env == 'production' else '/api/openapi.json')
 
@@ -58,13 +59,17 @@ def create_app() -> FastAPI:
         resp.headers.setdefault('Cache-Control', 'no-store')
         return resp
 
+    @app.exception_handler(AgentError)
+    async def agent_error(request: Request, exc: AgentError):    # switched off → 503 · rate-limited → 429 (+ Retry-After)
+        return JSONResponse({'detail': exc.message}, status_code=exc.status, headers=exc.headers)
+
     @app.exception_handler(Exception)
     async def unhandled(request: Request, exc: Exception):     # never leak stack traces to clients
         log.exception('Unhandled error on %s %s', request.method, request.url.path)
         return JSONResponse({'detail': 'Internal server error'}, status_code=500)
 
     for r in (system.router, auth.router, patients.router, patients.referrals_router, appointments.router, diagnostics.router,
-              tasks.router, notifications.router, ingest.router, ingest.docs_router, care_gaps.router, care_gaps.jobs_router, dashboard.router, demo.router, assistant.router):
+              tasks.router, notifications.router, ingest.router, ingest.docs_router, care_gaps.router, care_gaps.jobs_router, dashboard.router, demo.router, assistant.router, agents.router):
         app.include_router(r)
     return app
 

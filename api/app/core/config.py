@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     def llm_configured(self) -> bool:
         return self.llm_enabled and bool(self.gemini_api_key)
 
+    # AI agents (app/agents). Kill switch = rollback level L1: CAREFLOW_AGENTS_ENABLED=false turns every agent off and the app
+    # behaves like V3.0.0 without AI wording; CAREFLOW_AGENTS_DISABLED='["recommendation"]' turns off individual agents.
+    agents_enabled: bool = True
+    agents_disabled: list[str] = []
+    agent_calls_per_user_per_hour: int = 30      # LLM calls one person may trigger per rolling hour (all agents together)
+    agent_cooldown_seconds: int = 60             # pause for everyone after the provider answered 429 on every model (shared key quota)
+
     # Demo mode: the sign-in screen may reset the database and load a chosen demo scenario. Never in production.
     demo_mode: bool | None = None
 

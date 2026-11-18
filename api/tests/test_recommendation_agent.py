@@ -1,26 +1,20 @@
-"""Gemini recommendation agent – tested with a fake LLM (no network): de-identification, storage, staleness, fallback, approval."""
+"""Gemini recommendation agent – tested with the shared fake LLM (no network): de-identification, storage, staleness,
+fallback to the rule template, approval, and phase 0's on-demand rule."""
 import pytest
 from sqlalchemy import select
 
-from app.core.config import get_settings
+from app.agents.llm import LLMUnavailable
 from app.db import SessionLocal
 from app.models import CareGapAlert, Patient, Task
 from app.services import recommendation_agent as agent
 
+REC = agent.Recommendation(recommendation='Call the patient today and offer the next available review slot.',
+                           rationale='The review date has passed with nothing booked.', task_title='Call patient to book overdue review')
+
 
 @pytest.fixture
-def llm_on(monkeypatch):
-    s = get_settings()
-    monkeypatch.setattr(s, 'llm_enabled', True)
-    monkeypatch.setattr(s, 'gemini_api_key', 'test-key')
-    sent = []
-
-    def fake(context):
-        sent.append(context)
-        return agent.Recommendation(recommendation='Call the patient today and offer the next available review slot.',
-                                    rationale='The review date has passed with nothing booked.', task_title='Call patient to book overdue review'), 'gemini-test'
-    monkeypatch.setattr(agent, 'call_llm', fake)
-    return sent
+def llm_on(fake_llm):
+    return fake_llm.respond(agent.Recommendation, REC)
 
 
 def first_open(db, rule=None):
@@ -28,6 +22,13 @@ def first_open(db, rule=None):
     if rule:
         q = q.where(CareGapAlert.rule == rule)
     return db.execute(q).scalars().first()
+
+
+def clear_wording():
+    with SessionLocal() as db:                                              # shared test DB: clear wording left by earlier tests
+        for a in db.execute(select(CareGapAlert)).scalars():
+            a.ai_text = a.ai_rationale = a.ai_task_title = a.ai_source_hash = a.ai_error = None
+        db.commit()
 
 
 def test_context_is_deidentified():
@@ -56,8 +57,9 @@ def test_word_store_and_show(coord, llm_on):
     r = coord.post(f'/api/care-gaps/{aid}/recommendation')
     assert r.status_code == 200, r.text
     a = r.json()
-    assert a['aiStatus'] == 'ready' and a['aiModel'] == 'gemini-test' and a['aiText'].startswith('Call the patient')
-    assert len(llm_on) == 1
+    assert a['aiStatus'] == 'ready' and a['aiModel'] == 'fake-llm' and a['aiText'].startswith('Call the patient')
+    assert len(llm_on.calls) == 1 and llm_on.calls[0]['schema'] == 'Recommendation'
+    assert 'Word the recommended next action for this care gap. Facts (JSON):' in llm_on.calls[0]['prompt']
 
 
 def test_stale_wording_is_hidden_after_facts_change(coord, llm_on):
@@ -69,13 +71,11 @@ def test_stale_wording_is_hidden_after_facts_change(coord, llm_on):
         db.commit()
     a = next(x for x in coord.get('/api/care-gaps').json() if x['id'] == aid)
     assert a['aiStatus'] == 'stale' and a['aiText'] is None                # never show wording for facts that changed
-    assert len(llm_on) == 1                                                 # ...and never re-word automatically
+    assert len(llm_on.calls) == 1                                           # ...and never re-word automatically
 
 
-def test_failure_falls_back_to_template(coord, llm_on, monkeypatch):
-    def boom(context):
-        raise agent.LLMUnavailable('Gemini API error 429: quota')
-    monkeypatch.setattr(agent, 'call_llm', boom)
+def test_failure_falls_back_to_template(coord, llm_on):
+    llm_on.fail(LLMUnavailable('Gemini API error 503: overloaded', 503))
     with SessionLocal() as db:
         a = first_open(db)
         a.ai_text = None; a.ai_source_hash = None
@@ -83,11 +83,21 @@ def test_failure_falls_back_to_template(coord, llm_on, monkeypatch):
         aid = a.id
     assert coord.post(f'/api/care-gaps/{aid}/recommendation').status_code == 502
     a = next(x for x in coord.get('/api/care-gaps').json() if x['id'] == aid)
-    assert a['aiStatus'] == 'error' and 'quota' in a['aiError'] and a['action']['text']      # rule template still there
+    assert a['aiStatus'] == 'error' and 'overloaded' in a['aiError'] and a['action']['text']      # rule template still there
 
 
-# ---------------------------------------------------------------- phase 0: on-demand only
-def test_no_automatic_llm_calls(coord, admin, llm_on, monkeypatch):
+def test_approve_uses_ai_wording(coord, llm_on):
+    alerts = [a for a in coord.get('/api/care-gaps').json() if a['status'] == 'Open']
+    aid = alerts[-1]['id']
+    coord.post(f'/api/care-gaps/{aid}/recommendation')
+    task_id = coord.post(f'/api/care-gaps/{aid}/approve', json={}).json()['taskId']
+    with SessionLocal() as db:
+        t = db.get(Task, task_id)
+        assert t.title.startswith('Call patient to book overdue review') and 'Wording by fake-llm' in t.description
+
+
+# ---------------------------------------------------------------- phase 0: on demand only
+def test_no_automatic_llm_calls(coord, admin, llm_on):
     """Listing alerts, scans, the scheduler's jobs and an admin 'run jobs' must never call the model."""
     import app.jobs as jobs
     assert set(jobs.JOBS) == {'deliver_reminders', 'scan_care_gaps'}
@@ -105,27 +115,14 @@ def test_no_automatic_llm_calls(coord, admin, llm_on, monkeypatch):
             fn(db)
     assert admin.post('/api/jobs/run').status_code == 200
     coord.get('/api/care-gaps')
-    assert llm_on == []                                                     # zero LLM calls without a click
+    assert llm_on.calls == []                                               # zero LLM calls without a click
 
 
 def test_one_click_one_call(coord, llm_on):
-    with SessionLocal() as db:                                              # shared test DB: clear wording left by earlier tests
-        for a in db.execute(select(CareGapAlert)).scalars():
-            a.ai_text = a.ai_rationale = a.ai_task_title = a.ai_source_hash = a.ai_error = None
-        db.commit()
+    clear_wording()
     alerts = coord.get('/api/care-gaps').json()
-    assert all(a['aiStatus'] in ('none', 'error') for a in alerts)          # nothing generated until asked
+    assert all(a['aiStatus'] == 'none' for a in alerts)                     # nothing generated until asked
     coord.post(f"/api/care-gaps/{alerts[0]['id']}/recommendation")
-    assert len(llm_on) == 1
+    assert len(llm_on.calls) == 1
     after = {a['id']: a['aiStatus'] for a in coord.get('/api/care-gaps').json()}
     assert after[alerts[0]['id']] == 'ready' and all(s != 'ready' for k, s in after.items() if k != alerts[0]['id'])
-
-
-def test_approve_uses_ai_wording(coord, llm_on):
-    alerts = [a for a in coord.get('/api/care-gaps').json() if a['status'] == 'Open']
-    aid = alerts[-1]['id']
-    coord.post(f'/api/care-gaps/{aid}/recommendation')
-    task_id = coord.post(f'/api/care-gaps/{aid}/approve', json={}).json()['taskId']
-    with SessionLocal() as db:
-        t = db.get(Task, task_id)
-        assert t.title.startswith('Call patient to book overdue review') and 'Wording by gemini-test' in t.description

@@ -64,6 +64,13 @@ def doctor():
 
 
 @pytest.fixture
+def fake_llm(monkeypatch):
+    """Agents switched on with a fake provider (no network). Configure with fake_llm.respond(Schema, value)."""
+    from app.agents.testing import install_fake_llm
+    return install_fake_llm(monkeypatch)
+
+
+@pytest.fixture
 def admin():
     from app.db import SessionLocal
     from app.models import User

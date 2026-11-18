@@ -7,27 +7,27 @@ Division of labour (unchanged safety model):
 
 Data minimisation: the model receives de-identified facts only – category, rule, priority, reason, evidence text,
 department, primary condition and the rule's template action. No names, IDs, dates of birth or contact details are sent
-(patient names and IDs that appear inside rule text are replaced before sending).
+(patient names and IDs that appear inside rule text are replaced before sending, and the orchestrator blocks the call if
+any identifier is still present).
 
-Without a configured key (CAREFLOW_GEMINI_API_KEY) or when the call fails, the UI keeps showing the rule template.
-
+Runs through the shared agent layer (app/agents): kill switch, per-user limits, run log, output checks.
 On demand only: word() is called solely from POST /api/care-gaps/{id}/recommendation, i.e. when a person clicks
 "Generate / Regenerate with AI". No scan, import, list view or scheduled job calls the model.
 """
 import hashlib
 import json
-import logging
-import re
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
-from app.models import CareGapAlert, Patient
+from app.agents import limits, orchestrator
+from app.agents.base import Agent, register
+from app.agents.privacy import deidentify as _deidentify
+from app.models import CareGapAlert, Patient, User
 from app.services.care_gaps import RULES
 from app.services.common import utcnow
 
-log = logging.getLogger('careflow.llm')
+NAME = 'recommendation'
 
 SYSTEM = """You are the recommendation-wording agent inside CareFlow, a care-coordination tool used by care coordinators and doctors.
 A deterministic rule engine has already detected a care gap for one patient and attached the evidence. Your only job is to word the
@@ -51,28 +51,34 @@ class Recommendation(BaseModel):
     task_title: str = Field(description='Imperative task title, at most 80 characters.')
 
 
-class LLMUnavailable(Exception):
-    pass
+@register
+class RecommendationAgent(Agent):
+    name = NAME
+    label = 'Care-gap recommendation wording'
+    system = SYSTEM
+    instruction = 'Word the recommended next action for this care gap.'
+    output = Recommendation
+
+    def clean(self, rec: Recommendation) -> Recommendation:
+        rec.recommendation, rec.rationale, rec.task_title = (s.strip() for s in (rec.recommendation, rec.rationale, rec.task_title))
+        rec.task_title = rec.task_title[:80]
+        rec.recommendation, rec.rationale = rec.recommendation[:600], rec.rationale[:400]
+        return rec
+
+    def verify(self, rec: Recommendation, context: dict) -> list[str]:
+        # phase 2 (safety & grounding verifier) adds the grounding and clinical-advice checks here
+        return ['empty recommendation or task title'] if not rec.recommendation or not rec.task_title else []
 
 
 def source_hash(a: CareGapAlert) -> str:
-    """Fingerprint of the facts the wording depends on – a change re-triggers wording."""
+    """Fingerprint of the facts the wording depends on – a change hides the wording until someone regenerates it."""
     facts = json.dumps([a.rule, a.priority, a.reason, [e.get('text') for e in a.evidence or []], a.action.get('title')], sort_keys=True)
     return hashlib.sha256(facts.encode()).hexdigest()
 
 
 def is_current(a: CareGapAlert) -> bool:
-    return bool(a.ai_text) and a.ai_source_hash == source_hash(a)
-
-
-def _deidentify(text: str, p: Patient | None) -> str:
-    if not text:
-        return text
-    if p:
-        for s in {p.full_name, p.first_name, p.last_name}:
-            if s and len(s) > 1:
-                text = re.sub(re.escape(s), 'the patient', text, flags=re.I)
-    return re.sub(r'\bPT-\d{3,6}\b', 'the patient', text)
+    """Stored wording may be used: the agent is switched on and the wording matches the alert's current facts."""
+    return bool(a.ai_text) and a.ai_source_hash == source_hash(a) and limits.is_enabled(NAME)
 
 
 def build_context(a: CareGapAlert, p: Patient | None) -> dict:
@@ -87,84 +93,34 @@ def build_context(a: CareGapAlert, p: Patient | None) -> dict:
     }
 
 
-def _client():
-    cfg = get_settings()
-    if not cfg.llm_configured:
-        raise LLMUnavailable('No Gemini API key configured (CAREFLOW_GEMINI_API_KEY)')
-    from google import genai
-    from google.genai import types
-    # one attempt per model (fail fast) – call_llm moves on to the next model instead of the SDK retrying the busy one
-    opts = types.HttpOptions(timeout=cfg.llm_timeout_seconds * 1000, retry_options=types.HttpRetryOptions(attempts=1))
-    return genai.Client(api_key=cfg.gemini_api_key, http_options=opts), types
-
-
-def call_llm(context: dict) -> tuple[Recommendation, str]:
-    """One structured Gemini call. Returns (validated recommendation, model id)."""
-    from google.genai import errors
-    client, types = _client()
-    cfg = get_settings()
-    resp, model, last = None, None, None
-    for model in [cfg.gemini_model, *cfg.gemini_fallback_models]:
-        try:
-            resp = client.models.generate_content(
-                model=model,
-                contents='Word the recommended next action for this care gap. Facts (JSON):\n' + json.dumps(context, ensure_ascii=False),
-                config=types.GenerateContentConfig(system_instruction=SYSTEM, response_mime_type='application/json', response_schema=Recommendation,
-                                                   temperature=0.2, max_output_tokens=2048))
-            break
-        except errors.APIError as e:
-            last = LLMUnavailable(f'Gemini API error {getattr(e, "code", "")} on {model}: {getattr(e, "message", None) or str(e)[:160]}')
-            if getattr(e, 'code', None) in (404, 429, 500, 503, 504):
-                log.info('Gemini %s unavailable (%s) – trying the next model', model, getattr(e, 'code', ''))
-                continue                         # overloaded / rate-limited / not enabled for this key → next model
-            raise last from e                    # 400 / 401 / 403: a configuration problem – retrying another model won't help
-        except Exception as e:                   # network error / read timeout → try the next model as well
-            last = LLMUnavailable(f'Gemini call failed on {model}: {type(e).__name__}: {str(e)[:160]}')
-            log.info('Gemini %s failed (%s) – trying the next model', model, type(e).__name__)
-    if resp is None:
-        raise last or LLMUnavailable('No Gemini model available')
-    rec = resp.parsed if isinstance(resp.parsed, Recommendation) else None
-    if rec is None:
-        try:
-            rec = Recommendation.model_validate_json(resp.text or '')
-        except ValidationError as e:
-            raise LLMUnavailable('Gemini returned an unexpected format') from e
-    rec.recommendation, rec.rationale, rec.task_title = (s.strip() for s in (rec.recommendation, rec.rationale, rec.task_title))
-    if not rec.recommendation or not rec.task_title:
-        raise LLMUnavailable('Gemini returned an empty recommendation')
-    rec.task_title = rec.task_title[:80]
-    rec.recommendation, rec.rationale = rec.recommendation[:600], rec.rationale[:400]
-    return rec, model
-
-
-def word(db: Session, a: CareGapAlert, *, commit: bool = True) -> bool:
-    """Word one alert. Stores the result (or the error) on the alert; never raises for LLM problems."""
+def word(db: Session, a: CareGapAlert, user: User, *, commit: bool = True) -> bool:
+    """Word one alert at a person's request. Stores the result (or the error) on the alert; returns False on failure.
+    Raises limits.AgentDisabled / AgentLimited (nothing is sent or stored on the alert) – the route turns them into 503 / 429."""
     p = db.get(Patient, a.patient_id)
     h = source_hash(a)
-    try:
-        rec, model = call_llm(build_context(a, p))
-    except LLMUnavailable as e:
-        a.ai_error = str(e)[:500]
-        log.warning('Recommendation wording failed for %s: %s', a.id, e)
+    r = orchestrator.run(db, user, NAME, build_context(a, p), patient=p, entity=a.id)
+    if not r.ok:
+        a.ai_error = (r.error or 'AI wording failed')[:500]
         if commit:
             db.commit()
         return False
+    rec: Recommendation = r.output
     a.ai_text, a.ai_rationale, a.ai_task_title = rec.recommendation, rec.rationale, rec.task_title
-    a.ai_model, a.ai_generated_at, a.ai_source_hash, a.ai_error = model, utcnow(), h, None
+    a.ai_model, a.ai_generated_at, a.ai_source_hash, a.ai_error = r.model, utcnow(), h, None
     if commit:
         db.commit()
     return True
 
 
 def status(a: CareGapAlert) -> str:
-    """On-demand only – nothing is generated automatically, so there is no 'pending' state.
-    'ready' – wording matches the current facts · 'off' – no key configured · 'error' – the last requested attempt failed ·
-    'stale' – wording exists but the alert's facts changed (hidden; offer Regenerate) · 'none' – never requested (offer Generate).
-    In every state except 'ready' the UI shows the rule template."""
+    """On demand only – nothing is generated automatically, so there is no 'pending' state.
+    'ready' – wording matches the current facts · 'off' – no key, or the agent is switched off (stored wording hidden too) ·
+    'error' – the last requested attempt failed · 'stale' – wording exists but the alert's facts changed (offer Regenerate) ·
+    'none' – never requested (offer Generate). In every state except 'ready' the UI shows the rule template."""
+    if not limits.is_enabled(NAME):
+        return 'off'
     if is_current(a):
         return 'ready'
-    if not get_settings().llm_configured:
-        return 'off'
     if a.ai_error:
         return 'error'
     return 'stale' if a.ai_text else 'none'

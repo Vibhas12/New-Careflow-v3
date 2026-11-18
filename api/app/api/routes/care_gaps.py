@@ -9,7 +9,6 @@ from app.api import present
 from app.api.deps import DB, CurrentUser, require_roles
 from fastapi import HTTPException
 
-from app.core.config import get_settings
 from app.jobs import last_runs, run_all
 from app.models import AuditLog, CareGapAlert, Patient
 from app.schemas import AlertApproveIn, AlertOut, AlertSummary, Schema
@@ -65,9 +64,9 @@ def reword(alert_id: str, user: CurrentUser, db: DB):
     """(Re)generate the AI wording for one alert – the ONLY path that calls the LLM for care gaps, triggered by a person's click
     (coordinator / doctor, own scope). Falls back to the rule template on failure; there is no automatic retry."""
     a = svc._alert_for(db, user, alert_id)
-    if not get_settings().llm_configured:
-        raise HTTPException(503, 'The AI recommendation agent is not configured (set CAREFLOW_GEMINI_API_KEY)')
-    if not agent.word(db, a):
+    if a.status != 'Open':
+        raise HTTPException(409, 'AI wording is only available for open alerts')
+    if not agent.word(db, a, user):              # switched off → 503, over the limit → 429 (agents.limits, handled in main.py)
         raise HTTPException(502, f'The AI agent could not word this recommendation: {a.ai_error}')
     audit(db, user, 'AI recommendation generated', patient_id=a.patient_id, entity=a.id, detail=f'{a.category} · {a.ai_model}')
     db.commit()

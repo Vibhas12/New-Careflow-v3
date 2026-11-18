@@ -1,0 +1,52 @@
+"""Data minimisation for every agent.
+
+deidentify()  – replaces the patient's names and IDs inside free text before it is sent to the model.
+find_leaks()  – returns the KINDS of identifier found in a text (never the values), used by the orchestrator twice:
+                on the input (a hit blocks the call – nothing is sent) and on the output (a hit withholds the answer).
+"""
+import re
+
+from app.models import Patient
+
+PATIENT_ID = re.compile(r'\bPT-\d{3,6}\b', re.I)
+EMAIL = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
+PHONE_CANDIDATE = re.compile(r'\+?\d[\d\s().-]{7,}\d')
+
+
+def deidentify(text: str, p: Patient | None) -> str:
+    if not text:
+        return text
+    if p:
+        for s in sorted({p.full_name, p.first_name, p.last_name} - {None}, key=len, reverse=True):
+            if s and len(s) > 1:
+                text = re.sub(re.escape(s), 'the patient', text, flags=re.I)
+    return PATIENT_ID.sub('the patient', text)
+
+
+def _dob_forms(p: Patient) -> set[str]:
+    if not p.dob:
+        return set()
+    d = p.dob
+    return {d.isoformat(), d.strftime('%d/%m/%Y'), f'{d.day} {d.strftime("%b")} {d.year}', f'{d.day} {d.strftime("%B")} {d.year}'}
+
+
+def find_leaks(text: str, p: Patient | None = None) -> list[str]:
+    """Kinds of identifying information present in `text` – e.g. ['patient name', 'phone number']. Empty = clean."""
+    if not text:
+        return []
+    found = []
+    if PATIENT_ID.search(text):
+        found.append('patient ID')
+    if EMAIL.search(text):
+        found.append('email address')
+    if any(sum(c.isdigit() for c in m.group()) >= 10 for m in PHONE_CANDIDATE.finditer(text)):    # dates have fewer digits
+        found.append('phone number')
+    if p is not None:
+        names = [s for s in (p.first_name, p.last_name, p.ec_name) if s and len(s) > 2]
+        if any(re.search(rf'\b{re.escape(n)}\b', text, re.I) for n in names):
+            found.append('patient or contact name')
+        if any(f in text for f in _dob_forms(p)):
+            found.append('date of birth')
+        if p.address and len(p.address) > 8 and p.address.lower() in text.lower():
+            found.append('address')
+    return found
