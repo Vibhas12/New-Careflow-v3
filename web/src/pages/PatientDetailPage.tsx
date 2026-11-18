@@ -7,6 +7,7 @@ import { downloadFile } from '../api/phase3'
 import type { PatientDetail, Priority, Task, TestItem } from '../api/types'
 import { useReferralStatus, useTests } from '../api/workflows'
 import { useGenerateAiSummary, usePatientSummary } from '../api/assistant'
+import { SafetyCheck } from '../components/ai'
 import { BriefView } from '../components/assistant'
 import { AppointmentDetailDialog, TaskDetailDialog, TestDetailDialog } from '../components/details'
 import { BookAppointmentDialog, CallDialog, ConsultationForm, Field, ReferralDialog, ReminderDialog, RequestTestDialog, TaskDialog } from '../components/dialogs'
@@ -158,6 +159,7 @@ function AiSummary({ pid }: { pid: string }) {
           {ai && ai.status !== 'off' && <button className="btn" disabled={gen.isPending} onClick={write}><Icon name="spark" small /> {gen.isPending ? 'Asking Gemini…' : ai.status === 'none' ? 'Generate AI summary' : 'Regenerate AI summary'}</button>}
           {ai?.status === 'ready' && <button className="btn ghost s" onClick={() => setShowTemplate(!showTemplate)}>{showTemplate ? 'Show AI summary' : 'Show template version'}</button>}
         </div>
+        {aiReady && <div className="row" style={{ flexBasis: '100%', justifyContent: 'flex-end', flexWrap: 'wrap' }}><SafetyCheck path={`/api/assistant/patients/${pid}/summary/safety-check`} /></div>}
       </div>
       {ai && AI_NOTE[ai.status] && <div className="sm mt2" style={{ color: ai.status === 'none' ? undefined : 'var(--amb)' }} title={ai.error ?? ''}>{AI_NOTE[ai.status]}</div>}
       <ErrorBanner error={q.error} />

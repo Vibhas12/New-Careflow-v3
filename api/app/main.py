@@ -8,7 +8,8 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
 from app.agents.limits import AgentError
-from app.api.routes import agents, appointments, assistant, auth, care_gaps, dashboard, demo, diagnostics, ingest, notifications, patients, system, tasks
+from app.api.routes import (agents, appointments, assistant, auth, care_gaps, dashboard, demo, diagnostics, ingest, metrics, notifications, patients,
+                            system, tasks)
 from app.core.config import get_settings
 from app.jobs import maybe_start_embedded
 
@@ -40,7 +41,7 @@ SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
 
 def create_app() -> FastAPI:
     cfg = get_settings()
-    app = FastAPI(title='CareFlow API', version='3.5.0', lifespan=lifespan,
+    app = FastAPI(title='CareFlow API', version='3.6.0', lifespan=lifespan,
                   description='Care-coordination API. All data in demo environments is fictional.',
                   docs_url=None if cfg.env == 'production' else '/api/docs', openapi_url=None if cfg.env == 'production' else '/api/openapi.json')
 
@@ -69,7 +70,7 @@ def create_app() -> FastAPI:
         return JSONResponse({'detail': 'Internal server error'}, status_code=500)
 
     for r in (system.router, auth.router, patients.router, patients.referrals_router, appointments.router, diagnostics.router,
-              tasks.router, notifications.router, ingest.router, ingest.docs_router, care_gaps.router, care_gaps.jobs_router, dashboard.router, demo.router, assistant.router, agents.router):
+              tasks.router, notifications.router, ingest.router, ingest.docs_router, care_gaps.router, care_gaps.jobs_router, dashboard.router, demo.router, assistant.router, agents.router, metrics.router):
         app.include_router(r)
     return app
 

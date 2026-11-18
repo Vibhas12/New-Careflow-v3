@@ -9,6 +9,7 @@ os.environ['CAREFLOW_ENV'] = 'test'
 os.environ['CAREFLOW_UPLOAD_DIR'] = str(_tmp / 'uploads')
 os.environ['CAREFLOW_SCHEDULER'] = 'off'
 os.environ['CAREFLOW_LLM_ENABLED'] = 'false'          # never call the real LLM from tests (api/.env may hold a key)
+os.environ['CAREFLOW_AGENT_CALLS_PER_USER_PER_HOUR'] = '100000'   # the shared test DB accumulates runs; test_agents tests the cap itself
 
 import pytest  # noqa: E402
 from alembic import command  # noqa: E402

@@ -73,6 +73,22 @@ def reword(alert_id: str, user: CurrentUser, db: DB):
     return alerts_out(db, [a])[0]
 
 
+@router.post('/{alert_id}/safety-check')
+def safety_check(alert_id: str, user: CurrentUser, db: DB):
+    """Optional second opinion on the alert's current AI wording (reviewer agent, one request). Advisory – changes nothing."""
+    from app.services import insight_agents
+    a = svc._alert_for(db, user, alert_id)
+    try:
+        res = insight_agents.review_alert(db, user, a)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    if not res['ok']:
+        raise HTTPException(502, f'The AI safety check is not available: {res["error"]}')
+    audit(db, user, 'AI safety check', patient_id=a.patient_id, entity=a.id, detail=f'{res["verdict"]} · {len(res["concerns"])} concern(s) · {res["model"]}')
+    db.commit()
+    return res
+
+
 @router.get('/summary', response_model=AlertSummary)
 def summary(user: CurrentUser, db: DB, mine: bool = False):
     """Counts per rule – available to every role (administrators see no patient-level detail)."""

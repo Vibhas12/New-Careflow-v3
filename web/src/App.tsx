@@ -8,6 +8,7 @@ import { AssistantPage } from './pages/AssistantPage'
 import { CareGapsPage } from './pages/CareGapsPage'
 import { ImportPage } from './pages/ImportPage'
 import { ComingSoonPage } from './pages/ComingSoonPage'
+import { ExecutivePage, PerformancePage } from './pages/MetricsPages'
 import { TasksPage } from './pages/TasksPage'
 import { TestsPage } from './pages/TestsPage'
 import { DashboardPage } from './pages/DashboardPage'
@@ -44,6 +45,8 @@ function Authenticated() {
         <Route path="care-gaps" element={<CareGapsPage user={user} />} />
         {clinical && <Route path="assistant" element={<AssistantPage />} />}
         {user.role === 'coordinator' && <Route path="import" element={<ImportPage />} />}
+        {user.role !== 'coordinator' && <Route path="performance" element={<PerformancePage user={user} />} />}
+        {user.role === 'admin' && <Route path="executive" element={<ExecutivePage />} />}
         <Route path="*" element={<ComingSoonPage />} />
       </Route>
     </Routes>

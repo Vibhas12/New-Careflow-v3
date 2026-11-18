@@ -34,7 +34,7 @@ For PostgreSQL see `docker-compose.yml` and `api/.env.example`.
 
 ## Tests
 ```powershell
-cd api; .venv\Scripts\python -m pytest        # 178 tests: auth, scoping, priority, immutability, workflows, import, care gaps, jobs, dashboard, demo, assistant, agents
+cd api; .venv\Scripts\python -m pytest        # 192 tests: auth, scoping, priority, immutability, workflows, import, care gaps, jobs, dashboard, demo, assistant, agents
 cd web; npm run build                          # type-check + production build
 ```
 
@@ -173,6 +173,17 @@ The orchestrator commits before the provider request, so no database transaction
 * Suggestions are stored (`ingestion_records.ai_suggestion`, `ingestion_batches.ai_mapping`, migration 0008) and change records only on
   *Apply* (`…/ai-apply`, `…/ai-map/apply`), which re-runs matching and duplicate checks; mapping fills empty fields only.
 
+**Doctor Performance, Executive Overview and insights (phase 6).** `services/metrics.py` (code) computes coordination measures –
+aggregates only, each with its sample size `n` and definition; not clinical-quality rankings (satisfaction and recovery outcomes were
+removed in phase 4). `GET /api/metrics/performance?doctorId&dept&range` (doctors: own figures only; administrators: any or all),
+`GET /api/metrics/executive?range` (administrators). *Explain with AI* (`POST …/performance/explain`, `…/executive/explain`) recomputes the
+figures on the server and sends only those aggregates (no names – "the selected doctor") to the **insights** agent; the output is withheld
+if a number does not match a figure, a cited metric does not exist, it ranks or judges people, claims a cause, or draws a conclusion
+from a sample below 5 without saying so.
+**AI safety check** (`POST /api/care-gaps/{id}/safety-check`, `POST /api/assistant/patients/{id}/summary/safety-check`): the **reviewer**
+agent gives an advisory second opinion on AI text already shown, against the same de-identified facts; quoted phrases must exist in
+the text. It never changes, hides or approves anything.
+
 **Run log** (`agent_runs`, migration 0006): who asked, which agent, status (`ok` / `failed` / `withheld` / `blocked` / `limited` /
 `disabled`), model and fallback attempts, error, time taken, hash of the de-identified input. Prompts and outputs are never stored there.
 
@@ -196,5 +207,7 @@ and the patient `outcome_*` columns). Call outcomes and manual reminders are rec
 2. ✅ Appointments, diagnostic tests (request → schedule → result → review), tasks, referrals, consultations, notifications – one endpoint per action, with screens.
 3. ✅ Data Import + demo datasets on the server; care-gap rules with stored alerts and advisory suggested priority; scheduler / worker for reminders and scans.
 4. ✅ AI Care Assistant (template-based) + AI Summary tab. Communications, Recovery Tracker and Patient Experience removed.
-   Still to migrate: Doctor Performance, Executive Overview, Settings / user admin.
+   Still to migrate: Settings / user admin.
+4b. ✅ Multi-agent layer (v3.1–v3.6): on-demand only, shared orchestrator, verifier, kill switch and limits; care-gap wording, patient
+   AI summary, Ask AI chat, import extraction / column mapping, Doctor Performance + Executive Overview with insights, AI safety check.
 5. Production: Docker images, CI, structured logging, HTTPS reverse proxy, backups; replace the in-process login limiter with Redis when running more than one instance.

@@ -86,6 +86,22 @@ def summary_ai(patient_id: str, user: CurrentUser, db: DB):
     return b
 
 
+@router.post('/patients/{patient_id}/summary/safety-check')
+def summary_safety_check(patient_id: str, user: CurrentUser, db: DB):
+    """Optional second opinion on the patient's current AI summary (reviewer agent, one request). Advisory – changes nothing."""
+    from app.services import insight_agents
+    svc._need(user)
+    try:
+        res = insight_agents.review_summary(db, user, patient_id)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    if not res['ok']:
+        raise HTTPException(502, f'The AI safety check is not available: {res["error"]}')
+    audit(db, user, 'AI safety check', patient_id=patient_id, detail=f'AI summary: {res["verdict"]} · {len(res["concerns"])} concern(s) · {res["model"]}')
+    db.commit()
+    return res
+
+
 @router.post('/proposals/{proposal_id}/approve')
 def approve(proposal_id: str, user: CurrentUser, db: DB):
     return _proposal_out(db, svc.approve(db, user, proposal_id))

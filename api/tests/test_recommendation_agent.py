@@ -52,6 +52,7 @@ def test_off_without_key(coord):
 
 
 def test_word_store_and_show(coord, llm_on):
+    clear_wording()
     aid = coord.get('/api/care-gaps').json()[0]['id']
     assert coord.get('/api/care-gaps').json()[0]['aiStatus'] in ('none', 'error')
     r = coord.post(f'/api/care-gaps/{aid}/recommendation')

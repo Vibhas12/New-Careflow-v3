@@ -20,6 +20,8 @@ Agents in use (LLM, on demand):
     answer           AI Care Assistant "Ask AI" – answers + drafted tasks / reminders (services/answer_agent.py)
     import_extract   Data Import: report fields from a PDF's text, identity removed (services/import_agents.py)
     import_map       Data Import: CareFlow field for unrecognised CSV/JSON columns – names and value shapes only
+    insights         Doctor Performance / Executive Overview "Explain with AI" – aggregates only (services/insight_agents.py)
+    reviewer         "AI safety check" – advisory second opinion on an AI output already shown
 """
 
 
@@ -29,3 +31,4 @@ def load_all() -> None:
     import app.services.summary_agent  # noqa: F401
     import app.services.answer_agent  # noqa: F401
     import app.services.import_agents  # noqa: F401
+    import app.services.insight_agents  # noqa: F401

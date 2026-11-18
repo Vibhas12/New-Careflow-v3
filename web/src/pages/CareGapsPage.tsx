@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useUsers } from '../api/hooks'
 import { useAlertActions, useAlertActivity, useAlerts, useAlertSummary, useJobs, useRunJobs } from '../api/phase3'
 import type { Alert, Priority, User } from '../api/types'
+import { SafetyCheck } from '../components/ai'
 import { Field } from '../components/dialogs'
 import { Icon } from '../components/Icon'
 import { useToast } from '../components/Toast'
@@ -92,6 +93,7 @@ function AlertCard({ a, onAct }: { a: Alert; onAct: (k: 'approve' | 'modify' | '
               {a.aiStatus === 'stale' && <span style={{ color: 'var(--amb)' }}>Alert facts changed since the AI wording – showing the rule template</span>}
               {a.aiStatus === 'withheld' && <span style={{ color: 'var(--amb)' }} title={a.aiError ?? ''}>AI wording withheld by the safety check – showing the rule template</span>}
               {a.aiStatus === 'error' && <span style={{ color: 'var(--amb)' }} title={a.aiError ?? ''}>AI wording unavailable – showing the rule template</span>}
+              {a.aiStatus === 'ready' && <SafetyCheck path={`/api/care-gaps/${encodeURIComponent(a.id)}/safety-check`} />}
               <button className="btn ghost s" disabled={reword.isPending} onClick={regen}>{reword.isPending ? 'Asking Gemini…' : a.aiStatus === 'none' ? 'Generate with AI' : 'Regenerate with AI'}</button>
             </div>
           )}
