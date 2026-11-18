@@ -1,0 +1,34 @@
+record_type,patient_id,first_name,last_name,dob,gender,mobile,email,address,emergency_contact_name,emergency_contact_number,department,primary_condition,secondary_conditions,allergies,medications,care_plan,doctor,date,time,type,status,notes,diagnosis,plan,follow_up,test_name,summary,abnormal,referred_to,reason,title,priority
+patient,PT-3001,Aarav,Sharma,1968-03-14,Male,+91 98200 11001,aarav.sharma@example.com,"12 MG Road, Pune",Meera Sharma,+91 98200 11002,Cardiology,Hypertension,Type 2 diabetes mellitus,Penicillin,Amlodipine 5 mg daily; Metformin 500 mg twice daily,BP monitoring and 3-monthly cardiology review,u-d1,,,,,,,,,,,,,,,
+patient,PT-3002,Priyanka,Iyer,1985-07-22,Female,+91 98450 22001,priyanka.iyer@example.com,"45 Anna Salai, Chennai",Raghav Iyer,+91 98450 22002,General Medicine,Hypothyroidism,,None known,Levothyroxine 50 mcg daily,Thyroid function test every 6 months,u-d1,,,,,,,,,,,,,,,
+patient,PT-3003,Rohan,Mehta,1979-11-05,Male,+91 99300 33001,rohan.mehta@example.com,"8 Linking Road, Mumbai",Kavita Mehta,+91 99300 33002,Neurology,Migraine with aura,,Ibuprofen,Propranolol 40 mg twice daily,Headache diary and neurology follow-up,u-d2,,,,,,,,,,,,,,,
+patient,PT-3004,Ananya,Reddy,1962-01-30,Female,+91 98480 44001,ananya.reddy@example.com,"221 Banjara Hills, Hyderabad",Vikram Reddy,+91 98480 44002,Oncology,Breast cancer - on adjuvant therapy,Osteopenia,Sulfa drugs,Tamoxifen 20 mg daily,Oncology review every 3 months with imaging,u-d3,,,,,,,,,,,,,,,
+patient,PT-3005,Vikram,Singh,1955-09-12,Male,+91 98110 55001,vikram.singh@example.com,"17 Sector 15, Chandigarh",Harpreet Kaur,+91 98110 55002,Orthopedics,Osteoarthritis of right knee,Hypertension,None known,Paracetamol 1 g as required,Physiotherapy and review for knee replacement,u-d4,,,,,,,,,,,,,,,
+patient,PT-3006,Kavya,Nair,1992-04-18,Female,+91 94470 66001,kavya.nair@example.com,"3 MG Road, Kochi",Suresh Nair,+91 94470 66002,Mental Health,Generalised anxiety disorder,,None known,Sertraline 50 mg daily,CBT sessions and 6-weekly psychiatric review,u-d5,,,,,,,,,,,,,,,
+patient,PT-3007,Arjun,Gupta,1975-12-02,Male,+91 98100 77001,arjun.gupta@example.com,"56 Lajpat Nagar, New Delhi",Neha Gupta,+91 98100 77002,Cardiology,Coronary artery disease - post angioplasty,Hyperlipidaemia,Aspirin (gastric intolerance),Clopidogrel 75 mg daily; Atorvastatin 40 mg nightly,Cardiac rehab and lipid monitoring,u-d1,,,,,,,,,,,,,,,
+patient,PT-3008,Sneha,Patil,1988-06-25,Female,+91 98220 88001,sneha.patil@example.com,"9 FC Road, Pune",Amol Patil,+91 98220 88002,General Medicine,Iron-deficiency anaemia,,None known,Ferrous sulfate 200 mg daily,Repeat haemoglobin in 6 weeks,u-d1,,,,,,,,,,,,,,,
+patient,PT-3009,Rajesh,Kumar,1958-08-08,Male,+91 94430 99001,rajesh.kumar@example.com,"14 Gandhi Nagar, Coimbatore",Lakshmi Kumar,+91 94430 99002,Neurology,Parkinson disease,,Codeine,Levodopa/carbidopa 100/25 mg three times daily,Movement-disorder clinic review every 4 months,u-d2,,,,,,,,,,,,,,,
+patient,PT-3010,Diya,Banerjee,1996-02-14,Female,+91 98300 10101,diya.banerjee@example.com,"27 Park Street, Kolkata",Sourav Banerjee,+91 98300 10102,General Medicine,Asthma,Allergic rhinitis,Dust mites; Pollen,Salbutamol inhaler as required; Budesonide inhaler twice daily,Annual asthma review and inhaler technique check,u-d1,,,,,,,,,,,,,,,
+appointment,PT-3001,,,,,,,,,,,,,,,,u-d1,{T+7},10:30,Follow-up review,Scheduled,BP review,,,,,,,,,,
+appointment,PT-3003,,,,,,,,,,,,,,,,u-d2,{T+9},11:00,Follow-up review,Confirmed,,,,,,,,,,,
+appointment,PT-3005,,,,,,,,,,,,,,,,u-d4,{T-8},09:30,Initial assessment,Missed,Patient did not attend,,,,,,,,,,
+appointment,PT-3006,,,,,,,,,,,,,,,,u-d5,{T+14},15:00,Follow-up review,Scheduled,,,,,,,,,,,
+consultation,PT-3001,,,,,,,,,,,,,,,,u-d1,{T-13},,,,BP 152/94 at clinic. Reports occasional headaches. Good adherence to amlodipine.,Hypertension - suboptimally controlled,Increase amlodipine to 10 mg; home BP diary,{T+17},,,,,,,
+consultation,PT-3007,,,,,,,,,,,,,,,,u-d1,{T-21},,,,Six weeks post angioplasty. No chest pain on exertion. Attending cardiac rehab.,Coronary artery disease - stable,Continue dual therapy; repeat lipid profile,{T+71},,,,,,,
+test,PT-3002,,,,,,,,,,,,,,,,u-d1,{T-10},,,,,,,,Thyroid Function Test,TSH 6.8 mIU/L (raised); Free T4 11 pmol/L (synthetic result),yes,,,,
+test,PT-3008,,,,,,,,,,,,,,,,u-d1,{T-6},,,,,,,,Full Blood Count,Haemoglobin 9.6 g/dL (low); MCV 72 fL (synthetic result),yes,,,,
+test,PT-3004,,,,,,,,,,,,,,,,u-d3,{T-15},,,,,,,,Mammogram,No new suspicious lesions (synthetic result),no,,,,
+referral,PT-3005,,,,,,,,,,,,,,,,u-d4,{T-29},,,Pending,,,,,,,,Physiotherapy,Knee osteoarthritis - strengthening programme,,
+referral,PT-3009,,,,,,,,,,,,,,,,u-d2,{T-17},,,Pending,,,,,,,,Speech and language therapy,Mild dysarthria,,
+history,PT-3007,,,,,,,,,,,,,,,,,{T-64},,Surgery,,,,,,,,,,,Coronary angioplasty with stent (LAD),
+history,PT-3010,,,,,,,,,,,,,,,,,{T-108},,Hospital Visit,,,,,,,,,,,Emergency visit - acute asthma attack,
+task,PT-3005,,,,,,,,,,,,,,,,,{T+2},,,,,,,,,,,,,Call patient to rebook missed orthopaedic appointment,
+task,PT-3010,,,,,,,,,,,,,,,,,{T+6},,,,,,,,,,,,,Confirm inhaler refill collection,
+priority,PT-3002,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Raised TSH on latest thyroid test - dose review needed,,High
+priority,PT-3005,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Missed orthopaedic assessment and physiotherapy referral still pending,,High
+priority,PT-3008,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Low haemoglobin (9.6 g/dL) - response to iron therapy must be checked,,High
+priority,PT-3009,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Speech and language therapy referral outstanding for over two weeks,,High
+priority,PT-3003,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Stable on propranolol - routine neurology follow-up only,,Low
+priority,PT-3006,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Stable on sertraline - routine review booked,,Low
+priority,PT-3007,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Stable after angioplasty - attending cardiac rehab,,Low
+priority,PT-3010,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Asthma controlled - annual review only,,Low

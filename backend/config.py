@@ -7,6 +7,7 @@ DB_PATH = Path(os.environ.get("CAREFLOW_V2_DB", ROOT / "database" / "careflow_v2
 UPLOAD_DIR = Path(os.environ.get("CAREFLOW_V2_UPLOADS", ROOT / "uploads"))
 MIGRATIONS_DIR = ROOT / "migrations"
 SEED_FILE = ROOT / "seed" / "seed_data.json"
+DEMO_DIR = ROOT / "demo_datasets"   # one-click demo CSVs for the Data Import screen
 FRONTEND_DIR = ROOT.parent / "frontend" / "dist"
 HOST = os.environ.get("CAREFLOW_V2_HOST", "127.0.0.1")
 PORT = int(os.environ.get("CAREFLOW_V2_PORT", "8787"))

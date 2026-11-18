@@ -1,6 +1,6 @@
 """HTTP routes for file-based ingestion (/api/ingest/*). Authorised users: Care Coordinator."""
 import base64, binascii, json
-from . import config, db, ingest
+from . import config, db, demo, ingest
 
 AUTHORISED = ('coordinator',)
 
@@ -43,11 +43,15 @@ def register(route, ApiError):
         fname = (b.get('filename') or '').strip()
         if not fname:
             raise ApiError('No file name supplied')
-        ft = ingest.detect_type(fname)
         try:
             data = base64.b64decode(b.get('contentBase64') or '', validate=True)
         except (binascii.Error, ValueError):
             raise ApiError('The file content could not be decoded')
+        return ingest_bytes(conn, u, fname, data)
+
+    def ingest_bytes(conn, u, fname, data, label='Data file uploaded'):
+        """Shared by file upload and one-click demo datasets: validate → preserve original → parse into reviewable records."""
+        ft = ingest.detect_type(fname)
         reason = None
         if ft not in config.ALLOWED_UPLOAD_TYPES:
             reason = f'Unsupported file type ".{ft}". Allowed: CSV, JSON, PDF.'
@@ -63,7 +67,7 @@ def register(route, ApiError):
             conn.execute("BEGIN IMMEDIATE")
             try:
                 bid = ingest.create_batch(conn, u, fname, data, ft, reject_reason=reason)
-                ingest.audit(conn, u, 'Data file uploaded' if not reason else 'Data file rejected', None, bid, f'{fname} ({len(data)} bytes)' + (f': {reason}' if reason else ''))
+                ingest.audit(conn, u, label if not reason else 'Data file rejected', None, bid, f'{fname} ({len(data)} bytes)' + (f': {reason}' if reason else ''))
                 conn.execute("COMMIT")
             except Exception:
                 conn.execute("ROLLBACK"); raise
@@ -73,6 +77,37 @@ def register(route, ApiError):
         if out['status'] == 'Failed':
             raise ApiError(out['message'], 422, {'batch': out})
         return {'batch': out}
+
+    # ---- one-click demo datasets (backend/demo_datasets): no file chooser needed
+    def demo_manifest():
+        try:
+            return json.loads((config.DEMO_DIR / 'manifest.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return []
+
+    def demo_find(did):
+        ds = next((m for m in demo_manifest() if m['id'] == did), None)
+        if not ds:
+            raise ApiError('Demo dataset not found', 404)
+        return ds, demo.render(config.DEMO_DIR / ds['file'])
+
+    def demo_list(h, conn):
+        need(h, conn)
+        return {'datasets': demo_manifest(), 'today': demo.today_iso()}
+
+    def demo_load(h, conn, did):
+        u = need(h, conn)
+        ds, data = demo_find(did)
+        return ingest_bytes(conn, u, demo.filename(ds), data, label='Demo dataset loaded')
+
+    def demo_file(h, conn, did):
+        need(h, conn)
+        ds, data = demo_find(did)
+        h.send_response(200)
+        h.send_header('Content-Type', 'text/csv; charset=utf-8')
+        h.send_header('Content-Disposition', f'attachment; filename="{demo.filename(ds)}"')
+        h.send_header('Content-Length', str(len(data)))
+        h.end_headers(); h.wfile.write(data)
 
     def list_batches(h, conn):
         need(h, conn)
@@ -175,6 +210,9 @@ def register(route, ApiError):
         h.end_headers(); h.wfile.write(data)
 
     route('POST', r'/api/ingest/upload', upload)
+    route('GET', r'/api/ingest/demo', demo_list)
+    route('POST', r'/api/ingest/demo/([a-z0-9_-]+)/load', demo_load)
+    route('GET', r'/api/ingest/demo/([a-z0-9_-]+)/file', demo_file)
     route('GET', r'/api/ingest/batches', list_batches)
     route('GET', r'/api/ingest/batches/([A-Za-z0-9_-]+)', get_batch)
     route('PATCH', r'/api/ingest/records/(\d+)', patch_record)

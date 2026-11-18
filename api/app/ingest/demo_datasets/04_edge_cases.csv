@@ -1,0 +1,13 @@
+record_type,patient_id,first_name,last_name,dob,gender,mobile,email,address,emergency_contact_name,emergency_contact_number,department,primary_condition,secondary_conditions,allergies,medications,care_plan,doctor,date,time,type,status,notes,diagnosis,plan,follow_up,test_name,summary,abnormal,referred_to,reason,title,priority
+patient,PT-3011,Ishaan,Verma,1990-05-20,Male,+91 98710 11011,ishaan.verma@example.com,"4 Civil Lines, Jaipur",Pooja Verma,+91 98710 11012,General Medicine,Type 1 diabetes mellitus,,None known,Insulin glargine 18 units nightly; Insulin aspart with meals,Diabetes nurse review in 2 weeks; HbA1c in 3 months,u-d1,,,,,,,,,,,,,,,
+history,PT-3011,,,,,,,,,,,,,,,,,{T-9},,Hospital Visit,,,,,,,,,,,Admission - diabetic ketoacidosis at diagnosis,
+priority,PT-3011,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Newly diagnosed after DKA admission - close follow-up needed,,High
+patient,PT-3002,Priyanka,Iyer,1985-07-23,Female,,,,,,General Medicine,,Vitamin D deficiency,,,,,,,,,,,,,,,,,,,
+consultation,,Rohan,Mehta,1979-11-05,,,,,,,,,,,,,u-d2,{T-1},,,,Telephone review: aura episodes reduced to one per month.,Migraine with aura,Continue propranolol,,,,,,,,
+priority,PT-3004,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Oncologist asked for faster review,,Urgent
+priority,PT-3009,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Low
+priority,PT-9999,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Unknown patient reference,,High
+priority,PT-3008,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Fatigue worsening,,High
+priority,PT-3008,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Second row for the same patient in this file,,Low
+test,PT-3001,,,,,,,,,,,,,,,,u-d1,31/02/2026,,,,,,,,HbA1c,HbA1c 58 mmol/mol (synthetic result),yes,,,,
+appointment,PT-3009,,,,,,,,,,,,,,,,u-d2,{T+2},14:00,Movement-disorder clinic,Scheduled,,,,,,,,,,,

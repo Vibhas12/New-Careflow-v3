@@ -1,0 +1,22 @@
+# PostgreSQL for the CareFlow API (V3).  docker compose up -d db
+# then:  set CAREFLOW_DATABASE_URL=postgresql+psycopg://careflow:careflow-dev@localhost:5432/careflow
+#        alembic upgrade head && python -m app.seed      (from the api/ folder)
+# Development credentials only – use a secrets manager in any shared or production environment.
+services:
+  db:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_DB: careflow
+      POSTGRES_USER: careflow
+      POSTGRES_PASSWORD: careflow-dev
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - careflow-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U careflow -d careflow"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  careflow-pg:

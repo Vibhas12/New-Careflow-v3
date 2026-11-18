@@ -1,0 +1,34 @@
+[
+  {
+    "id": "baseline",
+    "file": "01_baseline.csv",
+    "title": "1 · Baseline – 10 new patients",
+    "summary": "Creates PT-3001 … PT-3010 with appointments, notes, results, referrals and tasks, and sets an initial priority for each patient.",
+    "effect": "4 patients High, 2 Medium, 4 Low",
+    "records": 33
+  },
+  {
+    "id": "escalation",
+    "file": "02_escalation.csv",
+    "title": "2 · Escalation – condition worsens",
+    "summary": "Abnormal results, emergency visits and new referrals for the same patients. Raises priority for 6 patients.",
+    "effect": "PT-3001, 3003, 3004, 3006, 3007 → High · PT-3010 → Medium",
+    "records": 20
+  },
+  {
+    "id": "recovery",
+    "file": "03_recovery.csv",
+    "title": "3 · Recovery – patients improving",
+    "summary": "Completed follow-ups and results back in range for the same patients. Lowers priority for 8 patients.",
+    "effect": "PT-3002, 3007, 3010 → Low · PT-3001, 3003, 3005, 3006, 3008 → Medium",
+    "records": 18
+  },
+  {
+    "id": "edge",
+    "file": "04_edge_cases.csv",
+    "title": "4 · Data-quality checks",
+    "summary": "A new patient with a priority, ID/DOB mismatch, a record with no ID, invalid priority values, a missing reason, an unknown patient, a duplicate row and an impossible date.",
+    "effect": "Shows review decisions, invalid and duplicate handling",
+    "records": 12
+  }
+]

@@ -293,6 +293,44 @@ def main():
     check('I9 foreign keys still consistent after all imports', con.execute('PRAGMA foreign_key_check').fetchall() == [])
     con.close()
 
+    # ---------------- one-click demo datasets + priority rows in imported files
+    check('D1 doctor cannot list demo datasets (403)', call('GET', '/api/ingest/demo', tok=login('u-d1'))[0] == 403)
+    s, r = call('GET', '/api/ingest/demo', tok=tc)
+    check('D1 coordinator sees the 4 demo datasets', s == 200 and [d['id'] for d in r['datasets']] == ['baseline', 'escalation', 'recovery', 'edge'], r)
+    s, raw = call('GET', '/api/ingest/demo/baseline/file', tok=tc, raw=True)
+    check('D1 demo CSV downloadable with dates resolved (no {T} tokens left)', s == 200 and raw.startswith(b'record_type,') and b'{T' not in raw)
+    curp = lambda pid: sqlite3.connect(DB).execute("SELECT priority FROM patients WHERE id=?", (pid,)).fetchone()[0]
+    def load_confirm(ds):
+        s, r = call('POST', f'/api/ingest/demo/{ds}/load', {}, tc)
+        b = r['batch']
+        for x in b['recordList']:
+            if x['decision'] == 'pending':
+                call('PATCH', f"/api/ingest/records/{x['id']}", {'decision': 'skip'}, tc)
+        return s, b, call('POST', f"/api/ingest/batches/{b['id']}/confirm", {}, tc)
+    s, b, (cs, cr) = load_confirm('baseline')
+    check('D2 baseline loads into review without a file upload and imports cleanly', s == 200 and cs == 200 and cr['result']['failed'] == 0 and cr['result']['imported'] == b['records'], cr)
+    check('D2 initial priorities set from the file (PT-3002 High, PT-3003 Low, PT-3001 default Medium)', (curp('PT-3002'), curp('PT-3003'), curp('PT-3001')) == ('high', 'low', 'med'))
+    s, b, (cs, cr) = load_confirm('escalation')
+    pr = [x for x in b['recordList'] if x['kind'] == 'priority']
+    check('D3 review shows current → new priority before confirm', any('Low → High' in i['msg'] for x in pr if x['mapped']['patient_id'] == 'PT-3003' for i in x['issues']))
+    check('D3 unchanged priority in a file is skipped as "no change"', any(x['mapped']['patient_id'] == 'PT-3005' and x['status'] == 'duplicate' for x in pr))
+    check('D3 escalation raises priority for the same patient (PT-3003 Low → High)', curp('PT-3003') == 'high')
+    load_confirm('recovery')
+    check('D4 recovery lowers priority for the same patient (PT-3003 High → Medium, PT-3002 → Low)', (curp('PT-3003'), curp('PT-3002')) == ('med', 'low'))
+    h = sqlite3.connect(DB).execute("SELECT previous_priority, new_priority, comment, user_role FROM priority_history WHERE patient_id='PT-3003' ORDER BY id").fetchall()
+    check('D4 every imported priority change is in the immutable history with reason, file and coordinator', [x[:2] for x in h] == [(None, 'med'), ('med', 'low'), ('low', 'high'), ('high', 'med')]
+          and all('imported from demo_' in x[2] and x[3] == 'coordinator' for x in h[1:]), h)
+    s, b, (cs, cr) = load_confirm('edge')
+    msgs = {x['mapped'].get('patient_id'): (x['status'], ' '.join(i['msg'] for i in x['issues'])) for x in b['recordList'] if x['kind'] == 'priority'}
+    check('D5 invalid priority value / missing reason / unknown patient are rejected', msgs['PT-3004'][0] == msgs['PT-3009'][0] == msgs['PT-9999'][0] == 'invalid'
+          and 'Unknown priority' in msgs['PT-3004'][1] and 'mandatory' in msgs['PT-3009'][1], msgs)
+    check('D5 new patient + priority in the same file (PT-3011 High)', curp('PT-3011') == 'high')
+    check('D5 uncertain matches wait for a decision', sum(1 for x in b['recordList'] if x['status'] == 'uncertain') == 2)
+    s, r = call('POST', '/api/ingest/demo/recovery/load', {}, tc)
+    check('D6 re-loading the same demo file on the same day is flagged as an exact duplicate', s == 200 and all(x['status'] == 'duplicate' for x in r['batch']['recordList']))
+    call('POST', f"/api/ingest/batches/{r['batch']['id']}/cancel", {}, tc)
+    check('D6 unknown demo dataset → 404', call('POST', '/api/ingest/demo/nope/load', {}, tc)[0] == 404)
+
     # ---------------- persistence across restart
     s, before = call('GET', '/api/state', tok=tc)
     s, r = call('POST', '/api/sync', {'changes': {'tasks': {'upsert': [{'id': 'TSK-9999', 'title': 'Restart persistence probe', 'patientId': 'PT-1002', 'priority': 'low', 'assignee': 'u-c1', 'created': '2026-11-18', 'due': '2026-11-20', 'status': 'New', 'kind': 'followup', 'source': 'Manual', 'desc': '', 'completedOn': None, 'alertId': None, 'history': [{'ts': '2026-11-18T00:00:00.000Z', 'by': 'Priya Nair', 'text': 'created'}]}]}}}, tc)

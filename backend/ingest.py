@@ -26,7 +26,11 @@ KIND_ALIASES = {
     'allergy': 'allergy', 'allergies': 'allergy',
     'history': 'history', 'medical_history': 'history', 'event': 'history', 'events': 'history',
     'task': 'task', 'tasks': 'task', 'outstanding_task': 'task', 'outstanding_tasks': 'task',
+    'priority': 'priority', 'priorities': 'priority', 'priority_change': 'priority', 'priority_changes': 'priority', 'patient_priority': 'priority',
 }
+# accepted spellings for a patient priority in a file → stored value
+PRIORITY_VALUES = {'high': 'high', 'h': 'high', 'medium': 'med', 'med': 'med', 'm': 'med', 'moderate': 'med', 'low': 'low', 'l': 'low'}
+PRIORITY_LABEL = {'high': 'High', 'med': 'Medium', 'low': 'Low'}
 FIELD_ALIASES = {
     'patient_id': ['patient_id', 'patientid', 'patient_ref', 'mrn', 'id', 'pid'],
     'first_name': ['first_name', 'firstname', 'first', 'given_name', 'forename'],
@@ -48,8 +52,9 @@ FIELD_ALIASES = {
     'notes': ['notes', 'clinical_notes', 'note', 'consultation_notes'], 'diagnosis': ['diagnosis'], 'prescription': ['prescription'],
     'plan': ['plan', 'treatment_plan'], 'follow_up': ['follow_up', 'followup', 'follow_up_date', 'review_date'],
     'test_name': ['test_name', 'test', 'report_type', 'investigation'], 'summary': ['result_summary', 'summary', 'findings', 'result', 'impression'],
-    'abnormal': ['abnormal'], 'referred_to': ['referred_to', 'referral_to', 'to', 'service'], 'reason': ['reason', 'referral_reason'],
+    'abnormal': ['abnormal'], 'referred_to': ['referred_to', 'referral_to', 'to', 'service'], 'reason': ['reason', 'referral_reason', 'priority_reason', 'comment'],
     'title': ['title', 'task', 'task_title'], 'detail': ['detail', 'details', 'description_long'], 'priority': ['task_priority'],
+    'new_priority': ['priority', 'new_priority', 'patient_priority'],
 }
 CANON = {a: k for k, al in FIELD_ALIASES.items() for a in al}
 KIND_FIELDS = {
@@ -63,6 +68,7 @@ KIND_FIELDS = {
     'allergy': ['patient_id', 'first_name', 'last_name', 'dob', 'allergies'],
     'history': ['patient_id', 'first_name', 'last_name', 'dob', 'date', 'type', 'title', 'detail'],
     'task': ['patient_id', 'first_name', 'last_name', 'dob', 'title', 'date', 'priority', 'notes'],
+    'priority': ['patient_id', 'first_name', 'last_name', 'dob', 'new_priority', 'reason'],
 }
 # patient-reference fields must not be re-mapped by alias collisions (e.g. 'id' ⇒ patient_id only in patient/other kinds)
 
@@ -338,6 +344,8 @@ def _rec_key(kind, pid, d):
         return (pid, d.get('date'), norm_name(d.get('title')))
     if kind == 'task':
         return (pid, norm_name(d.get('title')), d.get('date'))
+    if kind == 'priority':
+        return (pid, 'priority')          # one priority change per patient per file
     return None
 
 
@@ -449,6 +457,16 @@ def validate(conn, kind, d, creating=True):
         if not d.get('title'): E('Missing task title')
         if d.get('date'): need_date()
         else: E('Missing due date')
+    elif kind == 'priority':
+        raw = str(d.get('new_priority') or '').strip()
+        if not raw:
+            E('Missing priority (High, Medium or Low)')
+        elif raw.lower() not in PRIORITY_VALUES:
+            E(f'Unknown priority "{raw}" (use High, Medium or Low)')
+        else:
+            d['new_priority'] = PRIORITY_VALUES[raw.lower()]
+        if len(str(d.get('reason') or '').strip()) < 5:
+            E('A reason for the priority change is mandatory (at least 5 characters)')
     if kind != 'patient' and d.get('doctor') and not doctor_lookup(conn, d['doctor']):
         W(f'Doctor "{d["doctor"]}" not found – the patient\'s assigned doctor will be used')
     return iss
@@ -501,7 +519,13 @@ def evaluate(conn, kind, d, seen_keys=None, force_patient=None, force_new=False,
         target = res['matched_patient_id'] or pid
         dup = False
         if res.get('deferred'):
-            pass
+            if kind == 'priority':
+                issues.append({'level': 'info', 'msg': f'Priority will be set to {PRIORITY_LABEL[d["new_priority"]]} after the patient is created (default Medium)'})
+        elif kind == 'priority':
+            cur = conn.execute("SELECT priority FROM patients WHERE id=?", (target,)).fetchone()['priority']
+            dup = cur == d['new_priority']
+            issues.append({'level': 'info', 'msg': f'Patient is already {PRIORITY_LABEL[cur]} priority – no change' if dup else
+                           f'Priority will change: {PRIORITY_LABEL[cur]} → {PRIORITY_LABEL[d["new_priority"]]} (recorded in the priority history when you confirm)'})
         elif kind == 'patient':
             dup = not _patient_has_new_info(conn, target, d)
             if dup:
@@ -513,7 +537,12 @@ def evaluate(conn, kind, d, seen_keys=None, force_patient=None, force_new=False,
         key = _rec_key(kind, target, d)
         if seen_keys is not None and key:
             if key in seen_keys:
-                dup = True; issues.append({'level': 'info', 'msg': 'Duplicate of an earlier row in this same file'})
+                dup = True
+                if kind == 'priority':
+                    issues = [i for i in issues if not i['msg'].startswith('Priority will change')]
+                    issues.append({'level': 'info', 'msg': 'Only one priority change per patient per file – an earlier row already changes this patient'})
+                else:
+                    issues.append({'level': 'info', 'msg': 'Duplicate of an earlier row in this same file'})
             seen_keys.add(key)
         if dup:
             res['match_status'], res['decision'] = 'duplicate', 'skip'
@@ -731,6 +760,19 @@ def _save_record(conn, user, batch, rec):
         conn.execute("INSERT INTO tasks(id,title,patient_id,priority,assignee,created,due,status,kind,source,description,source_batch_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                      (eid, d['title'], pid, d.get('priority') if d.get('priority') in ('high', 'med', 'low') else 'med', p['coord_id'] or doc, today, d['date'], 'New', 'followup', 'Imported file', d.get('notes') or '', bid))
         conn.execute("INSERT INTO task_events(task_id,seq,ts,by_name,text) VALUES(?,?,?,?,?)", (eid, 0, now, user['name'], f'Task imported from {fname} ({bid})'))
+    elif kind == 'priority':
+        # Same audit trail as a manual change: the confirming Care Coordinator is the person who changes the priority.
+        old = conn.execute("SELECT priority FROM patients WHERE id=?", (pid,)).fetchone()['priority']
+        new = d['new_priority']
+        if old == new:
+            return f'{pid}/priority', f'No change – already {PRIORITY_LABEL[new]}'
+        comment = f'{d["reason"].strip()} (imported from {fname}, batch {bid})'
+        conn.execute("UPDATE patients SET priority=?, priority_updated_at=? WHERE id=?", (new, now, pid))
+        cur = conn.execute("INSERT INTO priority_history(patient_id,previous_priority,new_priority,comment,user_id,user_name,user_role,changed_at) VALUES(?,?,?,?,?,?,?,?)",
+                           (pid, old, new, comment, user['id'], user['name'], user['role'], now))
+        eid = f'PRI-{cur.lastrowid}'
+        audit(conn, user, 'Patient priority changed', pid, eid, f'{PRIORITY_LABEL[old]} → {PRIORITY_LABEL[new]}: {comment}')
+        return eid, f'Priority changed {PRIORITY_LABEL[old]} → {PRIORITY_LABEL[new]}'
     else:
         raise IngestError(f'Unsupported record type {kind}')
     audit(conn, user, f'Imported {kind}', pid, bid, f'{eid} from {fname}')

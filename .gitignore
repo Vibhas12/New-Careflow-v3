@@ -8,6 +8,14 @@ backend/database/*.db-wal
 backend/database/*.db-shm
 backend/uploads/
 
+# V3 API (FastAPI)
+api/.venv/
+api/careflow_dev.db
+api/careflow_dev.db-*
+api/.pytest_cache/
+api/uploads/
+api/*.backup-*.db
+
 # Local / editor
 .env
 .vscode/

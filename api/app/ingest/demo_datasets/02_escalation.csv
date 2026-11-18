@@ -1,0 +1,21 @@
+record_type,patient_id,first_name,last_name,dob,gender,mobile,email,address,emergency_contact_name,emergency_contact_number,department,primary_condition,secondary_conditions,allergies,medications,care_plan,doctor,date,time,type,status,notes,diagnosis,plan,follow_up,test_name,summary,abnormal,referred_to,reason,title,priority
+consultation,PT-3001,,,,,,,,,,,,,,,,u-d1,{T-1},,,,Home BP diary averaging 168/102 despite amlodipine 10 mg. New ankle swelling.,Hypertension - uncontrolled,Add telmisartan 40 mg; renal function and urine ACR,{T+7},,,,,,,
+test,PT-3001,,,,,,,,,,,,,,,,u-d1,{T-1},,,,,,,,Renal Function,eGFR 52 mL/min (reduced); creatinine 128 umol/L (synthetic result),yes,,,,
+medication,PT-3001,,,,,,,,,,,,,,Telmisartan 40 mg daily,,,,,,,,,,,,,,,,,
+priority,PT-3001,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Uncontrolled blood pressure with reduced kidney function on new results,,High
+test,PT-3003,,,,,,,,,,,,,,,,u-d2,{T-2},,,,,,,,MRI Brain,New T2 hyperintensity in left parietal lobe - correlate clinically (synthetic result),yes,,,,
+priority,PT-3003,,,,,,,,,,,,,,,,,,,,,,,,,,,,,New lesion on MRI - urgent neurology review,,High
+test,PT-3004,,,,,,,,,,,,,,,,u-d3,{T-3},,,,,,,,CT Chest,Two new sub-centimetre pulmonary nodules (synthetic result),yes,,,,
+priority,PT-3004,,,,,,,,,,,,,,,,,,,,,,,,,,,,,New pulmonary nodules on CT during adjuvant therapy,,High
+history,PT-3006,,,,,,,,,,,,,,,,,{T-5},,Hospital Visit,,,,,,,,,,,Emergency visit - panic attack with chest pain (cardiac cause excluded),
+referral,PT-3006,,,,,,,,,,,,,,,,u-d5,{T-10},,,Pending,,,,,,,,Community crisis team,Escalating anxiety symptoms after emergency attendance,,
+task,PT-3006,,,,,,,,,,,,,,,,,{T-2},,,,,,,,,,,,,Safety-plan check-in call,
+priority,PT-3006,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Emergency attendance and crisis-team referral not yet picked up,,High
+consultation,PT-3007,,,,,,,,,,,,,,,,u-d1,{T-2},,,,One week of exertional chest tightness relieved by rest. Adherent to clopidogrel and atorvastatin.,Coronary artery disease - possible recurrent angina,Urgent exercise ECG; GTN spray as required,{T+5},,,,,,,
+test,PT-3007,,,,,,,,,,,,,,,,u-d1,{T-1},,,,,,,,Lipid Profile,LDL 4.2 mmol/L (raised) on atorvastatin 40 mg (synthetic result),yes,,,,
+priority,PT-3007,,,,,,,,,,,,,,,,,,,,,,,,,,,,,New exertional chest pain and raised LDL after angioplasty,,High
+history,PT-3010,,,,,,,,,,,,,,,,,{T-4},,Hospital Visit,,,,,,,,,,,Emergency visit - moderate asthma exacerbation,
+medication,PT-3010,,,,,,,,,,,,,,Prednisolone 40 mg daily for 5 days,,,,,,,,,,,,,,,,,
+appointment,PT-3010,,,,,,,,,,,,,,,,u-d1,{T+1},16:00,Asthma review,Scheduled,Post-exacerbation review,,,,,,,,,,
+priority,PT-3010,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Second asthma exacerbation this year - review needed this week,,Medium
+priority,PT-3005,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Still awaiting physiotherapy and rebooked assessment,,High

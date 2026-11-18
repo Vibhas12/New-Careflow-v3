@@ -1,0 +1,19 @@
+record_type,patient_id,first_name,last_name,dob,gender,mobile,email,address,emergency_contact_name,emergency_contact_number,department,primary_condition,secondary_conditions,allergies,medications,care_plan,doctor,date,time,type,status,notes,diagnosis,plan,follow_up,test_name,summary,abnormal,referred_to,reason,title,priority
+appointment,PT-3001,,,,,,,,,,,,,,,,u-d1,{T},10:30,Follow-up review,Completed,BP 132/84 on telmisartan + amlodipine,,,,,,,,,,
+test,PT-3001,,,,,,,,,,,,,,,,u-d1,{T},,,,,,,,Renal Function,eGFR 61 mL/min (stable); creatinine 104 umol/L (synthetic result),no,,,,
+priority,PT-3001,,,,,,,,,,,,,,,,,,,,,,,,,,,,,BP now controlled and kidney function stable - keep monitoring,,Medium
+test,PT-3002,,,,,,,,,,,,,,,,u-d1,{T-1},,,,,,,,Thyroid Function Test,TSH 2.4 mIU/L (within range) after dose increase (synthetic result),no,,,,
+medication,PT-3002,,,,,,,,,,,,,,Levothyroxine 75 mcg daily,,,,,,,,,,,,,,,,,
+priority,PT-3002,,,,,,,,,,,,,,,,,,,,,,,,,,,,,TSH back in range after dose adjustment,,Low
+test,PT-3003,,,,,,,,,,,,,,,,u-d2,{T},,,,,,,,MRI Brain,"Repeat scan: lesion unchanged, appearance consistent with migraine-related change (synthetic result)",no,,,,
+priority,PT-3003,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Repeat MRI stable - routine neurology follow-up,,Medium
+appointment,PT-3005,,,,,,,,,,,,,,,,u-d4,{T-1},10:00,Initial assessment,Completed,Rebooked assessment attended,,,,,,,,,,
+priority,PT-3005,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Missed assessment now completed; physiotherapy referral still awaited,,Medium
+appointment,PT-3006,,,,,,,,,,,,,,,,u-d5,{T-1},12:00,Crisis team assessment,Completed,Safety plan agreed,,,,,,,,,,
+priority,PT-3006,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"Seen by crisis team, safety plan in place",,Medium
+test,PT-3007,,,,,,,,,,,,,,,,u-d1,{T-1},,,,,,,,Exercise ECG,No inducible ischaemia at 10 METs (synthetic result),no,,,,
+priority,PT-3007,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Exercise ECG normal and symptoms settled,,Low
+test,PT-3008,,,,,,,,,,,,,,,,u-d1,{T-1},,,,,,,,Full Blood Count,Haemoglobin 11.9 g/dL (improving); MCV 80 fL (synthetic result),no,,,,
+priority,PT-3008,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Haemoglobin improving on oral iron,,Medium
+appointment,PT-3010,,,,,,,,,,,,,,,,u-d1,{T},11:00,Asthma review,Completed,Peak flow back to 90% of best,,,,,,,,,,
+priority,PT-3010,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Exacerbation resolved; inhaler technique checked,,Low
