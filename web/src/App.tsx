@@ -9,6 +9,7 @@ import { CareGapsPage } from './pages/CareGapsPage'
 import { ImportPage } from './pages/ImportPage'
 import { ComingSoonPage } from './pages/ComingSoonPage'
 import { ExecutivePage, PerformancePage } from './pages/MetricsPages'
+import { SettingsPage } from './pages/SettingsPage'
 import { TasksPage } from './pages/TasksPage'
 import { TestsPage } from './pages/TestsPage'
 import { DashboardPage } from './pages/DashboardPage'
@@ -47,6 +48,7 @@ function Authenticated() {
         {user.role === 'coordinator' && <Route path="import" element={<ImportPage />} />}
         {user.role !== 'coordinator' && <Route path="performance" element={<PerformancePage user={user} />} />}
         {user.role === 'admin' && <Route path="executive" element={<ExecutivePage />} />}
+        <Route path="settings" element={<SettingsPage user={user} />} />
         <Route path="*" element={<ComingSoonPage />} />
       </Route>
     </Routes>

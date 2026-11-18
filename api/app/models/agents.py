@@ -29,3 +29,4 @@ class AgentRun(Base):
     issues: Mapped[list | None] = mapped_column(JSON)                         # verifier / privacy findings
     input_hash: Mapped[str | None] = mapped_column(String(64))
     duration_ms: Mapped[int | None] = mapped_column(Integer)
+    steps: Mapped[list | None] = mapped_column(JSON)                          # timed pipeline steps (v3.7): name, kind, status, ms, detail

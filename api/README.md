@@ -34,7 +34,7 @@ For PostgreSQL see `docker-compose.yml` and `api/.env.example`.
 
 ## Tests
 ```powershell
-cd api; .venv\Scripts\python -m pytest        # 192 tests: auth, scoping, priority, immutability, workflows, import, care gaps, jobs, dashboard, demo, assistant, agents
+cd api; .venv\Scripts\python -m pytest        # 198 tests: auth, scoping, priority, immutability, workflows, import, care gaps, jobs, dashboard, demo, assistant, agents
 cd web; npm run build                          # type-check + production build
 ```
 
@@ -198,6 +198,14 @@ with the reasons, the rule template stays, and the reasons are kept in `agent_ru
 Errors: switched off / no key → **503**; hourly cap or provider cooldown → **429** with `Retry-After`; provider failure or output
 withheld by a check → **502**, and the rule template stays on screen. Settings: `CAREFLOW_AGENTS_ENABLED`, `CAREFLOW_AGENTS_DISABLED`,
 `CAREFLOW_AGENT_CALLS_PER_USER_PER_HOUR` (30), `CAREFLOW_AGENT_COOLDOWN_SECONDS` (60).
+
+**Settings → AI agent pipeline (v3.7, Operations Manager / administrator).** Every orchestrator run records timed steps
+(`agent_runs.steps`, migration 0009): the caller's code step (Context agent, routing, document scrub, column profiling, metrics) →
+Switch → Limits → Privacy check → LLM call (with the model fallback chain) → Verifier, each with kind (code / llm), status, milliseconds
+and a count-only detail. `GET /api/agents/pipeline?range=1|7|30|90|all` (administrators) returns KPIs (runs, AI calls, acceptance,
+withheld / blocked / limited, fallback rate, model and code time, p95, autonomous actions = 0), per-agent health with the next human step,
+runs per day, verifier findings, models that answered, recent runs with their steps (no patient references) and the background jobs.
+The screen replays a recorded run step by step (1× / 2× / 4×); times are the measured ones. It never starts a run.
 
 **Removed in phase 4:** Communications, Recovery Tracker and Patient Experience (migration 0004 drops `communications`, `feedback`
 and the patient `outcome_*` columns). Call outcomes and manual reminders are recorded in the audit trail / reminders table instead.

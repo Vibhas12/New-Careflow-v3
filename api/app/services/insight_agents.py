@@ -9,6 +9,7 @@
                hides or approves anything; the person decides.
 """
 import re
+import time
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -65,6 +66,11 @@ def _allowed_numbers(context: dict) -> set[float]:
     return nums
 
 
+def _is_small(m: dict) -> bool:
+    """Only rates and averages can be over-read from a small sample; a plain count (even 0 of 0) is simply a fact."""
+    return m.get('unit') in ('%', 'days') and isinstance(m.get('n'), int) and m['n'] < 5 and m.get('value') is not None
+
+
 def _strip_dates(text: str) -> str:
     text = verifier.ISO.sub(' ', text)
     text = verifier.DMY.sub(' ', text)
@@ -103,20 +109,20 @@ class InsightsAgent(Agent):
                 issues.append('ranks or judges people')
             if CAUSAL.search(s.text):
                 issues.append('claims a cause the figures cannot show')
-            small = [keys[k] for k in s.metrics if k in keys and isinstance(keys[k].get('n'), int) and keys[k]['n'] < 5 and keys[k].get('value') is not None]
+            small = [keys[k] for k in s.metrics if k in keys and _is_small(keys[k])]
             if s.kind == 'observation' and small and not SMALL.search(s.text):
                 issues.append(f'draws a conclusion from a small sample ({", ".join(f"{m['key']} n={m['n']}" for m in small)})')
             issues += verifier.clinical_advice(s.text) + verifier.grounded_dates(s.text, context) + verifier.sentence_limit(s.text, 2)
         return list(dict.fromkeys(issues))
 
 
-def explain(db: Session, user: User, page: str, data: dict, scope: str) -> dict:
+def explain(db: Session, user: User, page: str, data: dict, scope: str, pre_steps: list[dict] | None = None) -> dict:
     """One click → one request. `data` is the metrics payload the page shows; only aggregates are sent."""
     ctx = {'page': page, 'scope': scope, 'rangeDays': {'all': 0}.get(data['range'], int(data['range']) if str(data['range']).isdigit() else 0),
            'metrics': [{**{k: m[k] for k in ('key', 'label', 'value', 'unit', 'n', 'definition')},
-                        'smallSample': isinstance(m.get('n'), int) and m['n'] < 5 and m.get('value') is not None} for m in data['kpis']],
+                        'smallSample': _is_small(m)} for m in data['kpis']],
            'weekly': data['weekly'], 'departments': data.get('departments', [])}
-    r = orchestrator.run(db, user, INSIGHTS, ctx, entity=f'insights:{page}')
+    r = orchestrator.run(db, user, INSIGHTS, ctx, entity=f'insights:{page}', pre_steps=pre_steps)
     db.commit()
     if not r.ok:
         return {'ok': False, 'status': r.status, 'error': r.error}
@@ -184,8 +190,9 @@ def _flatten(x):
         yield x
 
 
-def _review(db: Session, user: User, facts: dict, ai_output, patient: Patient | None, entity: str) -> dict:
-    r = orchestrator.run(db, user, REVIEWER, {'facts': facts, 'ai_output': ai_output}, patient=patient, entity=entity)
+def _review(db: Session, user: User, facts: dict, ai_output, patient: Patient | None, entity: str, t: float) -> dict:
+    pre = [orchestrator.timed_step('Load AI output + facts', t, 'the AI text under review and the de-identified facts it was written from')]
+    r = orchestrator.run(db, user, REVIEWER, {'facts': facts, 'ai_output': ai_output}, patient=patient, entity=entity, pre_steps=pre)
     db.commit()
     if not r.ok:
         return {'ok': False, 'status': r.status, 'error': r.error}
@@ -195,17 +202,19 @@ def _review(db: Session, user: User, facts: dict, ai_output, patient: Patient | 
 
 def review_alert(db: Session, user: User, a: CareGapAlert) -> dict:
     from app.services import recommendation_agent as ra
+    t = time.perf_counter()
     if not ra.is_current(a):
         raise ValueError('There is no current AI wording on this alert to check')
     p = db.get(Patient, a.patient_id)
     return _review(db, user, ra.build_context(a, p), {'recommendation': a.ai_text, 'rationale': a.ai_rationale, 'task_title': a.ai_task_title},
-                   p, f'review:{a.id}')
+                   p, f'review:{a.id}', t)
 
 
 def review_summary(db: Session, user: User, patient_id: str) -> dict:
     from app.agents.context import patient_context
+    t = time.perf_counter()
     ctx = patient_context(db, user, patient_id)                 # scoped: 404 / 403 outside the user's patients
     row = db.get(AiSummary, ctx.patient.id)
     if row is None or not row.payload or row.source_hash != ctx.fingerprint:
         raise ValueError('There is no current AI summary for this patient to check')
-    return _review(db, user, ctx.llm, row.payload, ctx.patient, f'review:summary:{ctx.patient.id}')
+    return _review(db, user, ctx.llm, row.payload, ctx.patient, f'review:summary:{ctx.patient.id}', t)

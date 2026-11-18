@@ -1,8 +1,11 @@
 """Doctor Performance (doctors: own figures; administrators: any doctor or all) and Executive Overview (administrators).
 Aggregates only. "Explain with AI" recomputes the figures on the server and sends only those aggregates to the insights agent."""
+import time
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.agents import orchestrator
 from app.api.deps import DB, CurrentUser, require_roles
 from app.core.catalog import DEPARTMENTS
 from app.services import insight_agents, metrics
@@ -48,12 +51,18 @@ def _explained(res: dict) -> dict:
 
 @router.post('/performance/explain', dependencies=[Depends(require_roles('doctor', 'admin'))])
 def explain_performance(body: ExplainIn, user: CurrentUser, db: DB):
+    t = time.perf_counter()
     data, scope = _perf(db, user, body.doctorId, body.dept, body.range)
-    return _explained(insight_agents.explain(db, user, 'doctor_performance', data, scope))
+    pre = [orchestrator.timed_step('Metrics (aggregates only)', t, f'{len(data["kpis"])} figures · {len(data["weekly"]["labels"])} weeks')]
+    return _explained(insight_agents.explain(db, user, 'doctor_performance', data, scope, pre))
 
 
 @router.post('/executive/explain', dependencies=[Depends(require_roles('admin'))])
 def explain_executive(body: ExplainIn, user: CurrentUser, db: DB):
     if body.range not in metrics.RANGES:
         raise HTTPException(422, 'Unknown date range')
-    return _explained(insight_agents.explain(db, user, 'executive_overview', metrics.executive(db, range_key=body.range), 'whole organisation'))
+    t = time.perf_counter()
+    data = metrics.executive(db, range_key=body.range)
+    pre = [orchestrator.timed_step('Metrics (aggregates only)', t, f'{len(data["kpis"])} figures · {len(data["departments"])} departments · '
+                                                                 f'{len(data["weekly"]["labels"])} weeks')]
+    return _explained(insight_agents.explain(db, user, 'executive_overview', data, 'whole organisation', pre))

@@ -31,6 +31,7 @@ const PATHS = {
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
   clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  play: '<path d="m6 3 14 9-14 9V3z"/>',
   file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/>',
 } as const
 

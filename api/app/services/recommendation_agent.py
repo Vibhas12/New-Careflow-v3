@@ -16,6 +16,7 @@ On demand only: word() is called solely from POST /api/care-gaps/{id}/recommenda
 """
 import hashlib
 import json
+import time
 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -102,9 +103,12 @@ def build_context(a: CareGapAlert, p: Patient | None) -> dict:
 def word(db: Session, a: CareGapAlert, user: User, *, commit: bool = True) -> bool:
     """Word one alert at a person's request. Stores the result (or the error) on the alert; returns False on failure.
     Raises limits.AgentDisabled / AgentLimited (nothing is sent or stored on the alert) – the route turns them into 503 / 429."""
+    t = time.perf_counter()
     p = db.get(Patient, a.patient_id)
     h = source_hash(a)
-    r = orchestrator.run(db, user, NAME, build_context(a, p), patient=p, entity=a.id)
+    ctx = build_context(a, p)
+    pre = [orchestrator.timed_step('Context (alert facts, de-identified)', t, f'rule "{ctx["rule"]}" · {len(ctx["evidence"])} evidence item(s)')]
+    r = orchestrator.run(db, user, NAME, ctx, patient=p, entity=a.id, pre_steps=pre)
     if not r.ok:
         a.ai_error = (r.error or 'AI wording failed')[:500]
         if commit:

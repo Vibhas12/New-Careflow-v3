@@ -12,6 +12,7 @@ status Proposed – nothing is created or sent until a person approves. On any f
 """
 import re
 import string
+import time
 from datetime import timedelta
 from typing import Literal
 
@@ -240,12 +241,15 @@ def ask_ai(db: Session, user: User, text: str, patient: Patient | None, pool: li
     """Returns the assistant message dict (intro, blocks, trace, patientId) or None when the AI could not answer
     (the caller then uses the template answer). Raises nothing for LLM problems; AgentDisabled / AgentLimited propagate."""
     route = 'patient' if patient else 'worklist'
+    t = time.perf_counter()
     sc = patient_scope(db, user, patient) if patient else worklist_scope(db, user, pool)
+    pre = [orchestrator.timed_step('Routing + Context agent', t, f'{route} context · {len(sc.alias)} patient alias(es) · {len(sc.facts)} fact(s) · '
+                                                               f'{len(sc.sources)} source(s)')]
     trace = [f'Orchestrator: “Ask AI” – routed to the {"patient" if patient else "worklist"} context'
              + (f' for {patient.full_name} ({patient.id})' if patient else f' ({len(sc.alias)} authorised patient(s))') + '.',
              f'Context Agent: {len(sc.facts)} de-identified fact(s) citing {len(sc.sources)} source record(s); patients and staff replaced by aliases.']
     r = orchestrator.run(db, user, NAME, sc.llm(text, route), patient=patient if patient else None,
-                         patients=None if patient else list(sc.alias.values()), entity=f'chat:{route}')
+                         patients=None if patient else list(sc.alias.values()), entity=f'chat:{route}', pre_steps=pre)
     if not r.ok:
         trace.append(f'Answer Agent: {r.status} – {r.error}')
         return {'failed': r.error, 'status': r.status, 'trace': trace}

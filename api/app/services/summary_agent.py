@@ -9,6 +9,7 @@ The suggested next steps are NOT written by this agent: they stay rule-based (ca
 agent's wording where current) so the approve buttons are never driven by free text.
 The result is stored per patient with the Context agent's fingerprint; it is hidden as soon as the records change.
 """
+import time
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -145,8 +146,10 @@ def summary(db: Session, user: User, patient_id: str) -> dict:
 
 def generate(db: Session, user: User, patient_id: str) -> tuple[dict, bool]:
     """One click → one model request. Returns (summary response, ok). Raises AgentDisabled / AgentLimited (503 / 429)."""
+    t = time.perf_counter()
     ctx = patient_context(db, user, patient_id)
-    r = orchestrator.run(db, user, NAME, ctx.llm, patient=ctx.patient, entity=f'summary:{ctx.patient.id}')
+    pre = [orchestrator.timed_step('Context agent', t, f'{len(ctx.llm["facts"])} de-identified fact(s) · {len(ctx.llm["sources"])} source record(s)')]
+    r = orchestrator.run(db, user, NAME, ctx.llm, patient=ctx.patient, entity=f'summary:{ctx.patient.id}', pre_steps=pre)
     row = db.get(AiSummary, ctx.patient.id) or AiSummary(patient_id=ctx.patient.id)
     if r.ok:
         out: PatientSummary = r.output

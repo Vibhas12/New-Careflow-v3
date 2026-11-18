@@ -104,6 +104,8 @@ def test_small_sample_needs_a_caveat():
     assert any('small sample (attendance n=2)' in i for i in say('Attendance is 50%.', ['attendance']))
     assert say('Attendance is 50%, but only 2 appointments – a small sample.', ['attendance']) == []
     assert say('40 tasks were completed.', ['tasks_completed']) == []                       # n=40: no caveat needed
+    ctx['metrics'].append({'key': 'open_care_gaps', 'label': 'Outstanding care gaps', 'value': 0, 'unit': 'count', 'n': 0, 'definition': '…'})
+    assert say('There are 0 outstanding care gaps.', ['open_care_gaps']) == []              # seen live: a count of 0 is a fact, not a sample
     assert any('not in the figures (41)' in i for i in say('41 tasks were completed.', ['tasks_completed']))
 
 

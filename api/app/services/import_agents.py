@@ -14,6 +14,7 @@ Suggestions are stored (ingestion_records.ai_suggestion / ingestion_batches.ai_m
 reviewer selects Apply – which re-runs the normal matching and duplicate checks. Mapping fills empty fields only.
 """
 import re
+import time
 from datetime import date
 from types import SimpleNamespace
 from typing import Literal
@@ -161,12 +162,15 @@ def extract(db: Session, user: User, rec: IngestionRecord) -> bool:
     d = db.execute(select(Document).where(Document.batch_id == b.id)).scalar()
     if not d or not (d.extracted_text or '').strip():
         raise IngestError('No document text is available for this batch')
+    t = time.perf_counter()
     people = _identity(db, rec)
     doc = scrub_document(d.extracted_text, people)
     m = rec.mapped or {}
     ctx = {'document': doc, 'rule_extracted': {'test_name': m.get('test_name') or '', 'date': m.get('date') or '', 'summary': (m.get('summary') or '')[:600]}}
     real = people[0] if people and isinstance(people[0], Patient) else None
-    r = orchestrator.run(db, user, EXTRACT, ctx, patient=real, patients=None if real else [p for p in people if p.full_name or p.id], entity=f'import:{rec.id}')
+    pre = [orchestrator.timed_step('Document scrub', t, f'{doc.count("[identity line removed]")} identity line(s) removed · {len(doc):,} characters kept')]
+    r = orchestrator.run(db, user, EXTRACT, ctx, patient=real, patients=None if real else [p for p in people if p.full_name or p.id], entity=f'import:{rec.id}',
+                         pre_steps=pre)
     now = utcnow().isoformat()
     if r.ok:
         out: ReportFields = r.output
@@ -293,14 +297,16 @@ def suggest_mapping(db: Session, user: User, b: IngestionBatch) -> bool:
         raise IngestError('This batch has already been finalised')
     if b.file_type not in ('csv', 'json'):
         raise IngestError('AI column mapping is available for CSV and JSON imports')
+    t = time.perf_counter()
     cols = unknown_columns(db, b)
     if not cols:
         raise IngestError('Every column in this file is already recognised')
+    pre = [orchestrator.timed_step('Column profiling', t, f'{len(cols)} unrecognised column(s) · names and value shapes only')]
     kinds = sorted({k for c in cols for k in c['kinds']})
     known = sorted({k for r in db.execute(select(IngestionRecord.raw).where(IngestionRecord.batch_id == b.id)).scalars() for k in (r or {}) if norm_key(k) in CANON})
     ctx = {'columns': cols, 'known_columns': known, 'targets': {k: KIND_FIELDS[k] for k in kinds if k in KIND_FIELDS},
            'field_help': {f: FIELD_HELP.get(f, f) for k in kinds for f in KIND_FIELDS.get(k, [])}}
-    r = orchestrator.run(db, user, MAP, ctx, entity=f'import:{b.id}')
+    r = orchestrator.run(db, user, MAP, ctx, entity=f'import:{b.id}', pre_steps=pre)
     now = utcnow().isoformat()
     if r.ok:
         b.ai_mapping = {'status': 'ready', 'mappings': [m.model_dump() for m in r.output.mappings], 'columns': cols, 'model': r.model, 'at': now, 'applied': False}
