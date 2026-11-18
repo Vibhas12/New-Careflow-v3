@@ -1,0 +1,74 @@
+{
+  "consultations": [
+    {
+      "patient_id": "PT-1002",
+      "date": "2026-11-10",
+      "doctor": "u-d1",
+      "notes": "Review of glycaemic control. Patient reports improved adherence to diet plan. No hypoglycaemic episodes.",
+      "diagnosis": "Type 2 diabetes mellitus",
+      "plan": "Repeat HbA1c in 3 months; continue metformin",
+      "follow_up": "2027-02-10"
+    },
+    {
+      "patient_id": "PT-2001",
+      "date": "2026-11-12",
+      "doctor": "u-d1",
+      "notes": "Initial cardiology assessment for hypertension. Home BP diary requested."
+    }
+  ],
+  "diagnostic_reports": [
+    {
+      "patient_id": "PT-1007",
+      "test_name": "Lipid Profile",
+      "date": "2026-11-09",
+      "summary": "Total cholesterol 5.1 mmol/L; LDL 3.1 mmol/L; HDL 1.4 mmol/L (synthetic imported report)."
+    }
+  ],
+  "appointments": [
+    {
+      "patient_id": "PT-1006",
+      "date": "2027-02-02",
+      "time": "10:30",
+      "type": "Follow-up review",
+      "status": "Scheduled"
+    }
+  ],
+  "referrals": [
+    {
+      "patient_id": "PT-1008",
+      "referred_to": "Renal clinic",
+      "reason": "CKD stage 3 \u2013 annual specialist review",
+      "status": "Pending"
+    }
+  ],
+  "tasks": [
+    {
+      "patient_id": "PT-1013",
+      "title": "Confirm repeat prescription collection",
+      "due": "2026-12-01"
+    }
+  ],
+  "medical_history": [
+    {
+      "patient_id": "PT-1009",
+      "date": "2026-10-20",
+      "type": "Hospital Visit",
+      "title": "Emergency department attendance \u2013 severe migraine",
+      "detail": "Discharged same day (synthetic)."
+    }
+  ],
+  "patients": [
+    {
+      "patient_id": "PT-2001",
+      "first_name": "Fiona",
+      "last_name": "Walker",
+      "dob": "1984-03-12",
+      "gender": "Female",
+      "department": "Cardiology",
+      "primary_condition": "Hypertension",
+      "allergies": "Penicillin",
+      "medications": "Ramipril 2.5 mg daily",
+      "mobile": "07700 900611"
+    }
+  ]
+}

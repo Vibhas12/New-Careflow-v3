@@ -1,0 +1,7 @@
+record_type,patient_id,first_name,last_name,dob,gender,mobile,email,department,primary_condition,allergies,medications,care_plan
+patient,PT-1005,Olivia,Green,,Female,07700 900555,,General Medicine,Asthma,Aspirin,Montelukast 10 mg nightly,Annual asthma review and inhaler technique check
+patient,PT-2001,Fiona,Walker,1984-03-12,Female,07700 900611,fiona.walker@example.com,Cardiology,Hypertension,Penicillin,Ramipril 2.5 mg daily,Blood pressure monitoring and 6-monthly review
+patient,,Emma,Parker,,Female,07700 900622,,General Medicine,Type 2 diabetes mellitus,,,
+patient,PT-1003,Michael,Smith,1971-05-02,Male,,,Cardiology,Atrial fibrillation,,,
+patient,PT-2001,Fiona,Walker,1984-03-12,Female,07700 900611,fiona.walker@example.com,Cardiology,Hypertension,Penicillin,Ramipril 2.5 mg daily,
+patient,,Tariq,,1990-02-30,Male,,,Neurology,Migraine,,,

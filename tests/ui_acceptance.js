@@ -1,0 +1,142 @@
+// UI acceptance for V2 decisions: priority management + file ingestion + persistence, driven in a real browser.
+const {chromium}=require(require('child_process').execSync('npm root -g').toString().trim()+'/playwright');
+const {spawn}=require('child_process');const fs=require('fs');const path=require('path');const os=require('os');
+const ROOT=path.resolve(__dirname,'..');const T=fs.mkdtempSync(path.join(os.tmpdir(),'cfui_'));const PORT=8796;const URL='http://127.0.0.1:'+PORT+'/';
+const SAMPLES=path.join(ROOT,'backend/sample_uploads');
+const env={...process.env,CAREFLOW_V2_DB:T+'/database/careflow_v2.db',CAREFLOW_V2_UPLOADS:T+'/uploads',CAREFLOW_V2_PORT:PORT,PYTHONPATH:ROOT};
+let srv=null,fails=0,total=0;
+const ok=(c,m,d)=>{total++;if(!c){fails++;console.log('FAIL  '+m+(d?'   ['+d+']':''))}else console.log('PASS  '+m)};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function startSrv(){srv=spawn('python3',['-m','backend.server','--quiet'],{cwd:ROOT,env,stdio:'ignore'});for(let i=0;i<60;i++){try{const r=await fetch(URL+'api/health');if(r.ok)return}catch(e){}await sleep(250)}throw new Error('server did not start')}
+async function stopSrv(){if(srv){srv.kill('SIGINT');await sleep(800);srv=null}}
+(async()=>{
+ await startSrv();
+ const b=await chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});
+ const pg=await b.newPage({viewport:{width:1440,height:900}});const errs=[];pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/agent-proxy|connect_rejected/.test(m.text()))errs.push(m.text())});
+ const login=async(r,email)=>{await pg.waitForSelector('.login');await pg.click('[data-act=pickRole][data-id='+r+']');if(email){await pg.fill('[data-b="login.email"]',email)}await pg.click('[data-act=signin]');await pg.waitForSelector('.app');await pg.waitForFunction(()=>__careflow.DB&&__careflow.DB.session)};
+ const logout=async()=>{await pg.evaluate(()=>__careflow.syncIdle());await pg.click('[data-act=toggleMenu]');await pg.click('[data-act=logout]');await pg.waitForSelector('.login')};
+ const nav=async id=>{await pg.click('.nav[data-id='+id+']');await pg.waitForTimeout(150)};
+ const openPt=async(id,tab)=>{await pg.evaluate(([i,t])=>__careflow.go('patient/'+i,{tab:t||'overview'}),[id,tab]);await pg.waitForSelector('.tabs')};
+ const pri=id=>pg.evaluate(i=>__careflow.DB.patients.find(p=>p.id===i).priority,id);
+ await pg.goto(URL);
+ /* ================= Priority: coordinator ================= */
+ await login('coordinator');
+ const before=await pg.evaluate(()=>Object.fromEntries(__careflow.DB.patients.map(p=>[p.id,p.priority])));
+ await openPt('PT-1001');
+ ok(await pg.locator('[data-act=changePriority]').count()>=1,'U1 Care Coordinator sees "Change priority" on the patient profile');
+ const cur=before['PT-1001'];const target=cur==='low'?'med':'low';
+ await pg.locator('[data-act=changePriority]').first().click();await pg.waitForSelector('.modal');
+ await pg.click('[data-act=priReview]');
+ ok(await pg.locator('.modal .field.bad').count()===2,'U2 empty form: both the priority dropdown and the mandatory comment are flagged');
+ await pg.selectOption('[data-b="m.newP"]',target);
+ ok(/→/.test(await pg.innerText('.modal'))&&await pg.locator('.modal .badge').count()>=3,'U3 old → new priority preview appears as soon as a priority is selected');
+ await pg.click('[data-act=priReview]');
+ ok(await pg.locator('.modal .field.bad').count()===1&&/mandatory/i.test(await pg.innerText('.modal')),'U2 comment is mandatory (cannot proceed without it)');
+ await pg.fill('[data-b="m.comment"]','Reviewed notes with the doctor – stable, lowering urgency');
+ await pg.click('[data-act=priReview]');
+ const ct=await pg.innerText('.modal');
+ ok(/Confirm priority change/.test(ct)&&/Current/.test(ct)&&/New/.test(ct)&&/lowering urgency/.test(ct)&&/Priya Nair/.test(ct),'U3 confirmation step shows old priority, new priority, comment and who is changing it');
+ ok((await pri('PT-1001'))===cur,'U3 nothing is saved before the user confirms');
+ await pg.click('[data-act=priConfirm]');await pg.waitForFunction(()=>!document.querySelector('.modal'));await pg.waitForTimeout(300);
+ ok((await pri('PT-1001'))===target,'U4 priority updated after confirmation ('+cur+' → '+target+')');
+ const badge=await pg.innerText('.card h1 + .badge, .card .row .badge');
+ ok(new RegExp({high:'High',med:'Medium',low:'Low'}[target]).test(await pg.innerText('.card')),'U4 profile header shows the new priority');
+ const ov=await pg.innerText('.main');
+ ok(/Priority & history|Priority &amp; history/i.test(ov)&&/lowering urgency/.test(ov)&&/Priya Nair/.test(ov)&&/Care Coordinator/.test(ov),'U4 history table lists the new entry with comment, user and role');
+ ok(/Initial/.test(ov)&&/synthetic demo data was loaded/.test(ov),'U5 earlier (seed) history entry is still present');
+ ok(await pg.locator('[data-act=changePriority]').count()>=1,'U4 change control remains available');
+ await pg.click('.tab:has-text("Care Journey")');
+ ok(/Priority changed/.test(await pg.innerText('.tl')),'U5 Care Journey timeline shows the priority change');
+ await nav('patients');await pg.fill('[data-b="f.name"]','Sarah Thompson');
+ ok(new RegExp({high:'High',med:'Medium',low:'Low'}[target]).test(await pg.locator('tbody tr').first().innerText()),'U6 patient directory reflects the new priority');
+ await nav('dashboard');
+ const col=await pg.evaluate(()=>[...document.querySelectorAll('.card,.col,section')].filter(e=>/Sarah Thompson/.test(e.innerText)).length);
+ const bucketTitle=await pg.evaluate(()=>{const cards=[...document.querySelectorAll('h2,h3')].filter(h=>/priority/i.test(h.textContent));for(const h of cards){const box=h.closest('div[class]');if(box&&box.innerText.includes('Sarah Thompson')&&box.innerText.length<4000)return h.textContent}return ''});
+ ok(new RegExp({high:'High',med:'Medium',low:'Low'}[target],'i').test(bucketTitle),'U6 dashboard attention board places the patient in the new priority column',bucketTitle);
+ /* priority is never changed by gap engine or AI */
+ const snap=await pg.evaluate(()=>Object.fromEntries(__careflow.DB.patients.map(p=>[p.id,p.priority])));
+ await pg.evaluate(()=>{const a=__careflow.DB.appointments.find(x=>x.patientId==='PT-1006'&&['Scheduled','Confirmed'].includes(x.status));a.status='Missed';a.date=new Date(Date.now()-3*864e5).toISOString().slice(0,10);__careflow.commit()});
+ await pg.waitForTimeout(300);
+ const gapsNow=await pg.evaluate(()=>__careflow.GAPS.filter(g=>g.patientId==='PT-1006').map(g=>g.rule));
+ await openPt('PT-1006','ai');await pg.click('[data-act=aiGen]');await pg.waitForTimeout(300);
+ const after=await pg.evaluate(()=>Object.fromEntries(__careflow.DB.patients.map(p=>[p.id,p.priority])));
+ ok(gapsNow.includes('missed_appt'),'U7 care-gap engine detected a new gap for PT-1006',gapsNow.join());
+ ok(JSON.stringify(Object.entries(after).filter(([k])=>k!=='PT-1001'))===JSON.stringify(Object.entries(snap).filter(([k])=>k!=='PT-1001')),'U7 new care gap + AI summary did NOT change any patient priority');
+ const aiTxt=await pg.innerText('.main');
+ ok(/Current priority/.test(aiTxt)&&/advisory only/.test(aiTxt),'U7 AI summary states the current priority and presents the gap-based priority only as an advisory suggestion');
+ const hist6=await pg.evaluate(()=>__careflow.DB.priorityHistory.filter(h=>h.patientId==='PT-1006').length);
+ ok(hist6===1,'U7 no priority-history entry was created automatically (only the initial one)',hist6);
+ await logout();
+ /* doctor */
+ await login('doctor');await openPt('PT-1001');
+ const cur2=await pri('PT-1001');const t2=cur2==='high'?'med':'high';
+ await pg.locator('[data-act=changePriority]').first().click();await pg.selectOption('[data-b="m.newP"]',t2);await pg.click('[data-act=priReview]');
+ ok(/mandatory/i.test(await pg.innerText('.modal')),'U8 Doctor must also enter a comment');
+ await pg.fill('[data-b="m.comment"]','Abnormal result pending review – raising priority');await pg.click('[data-act=priReview]');await pg.click('[data-act=priConfirm]');
+ await pg.waitForFunction(()=>!document.querySelector('.modal'));await pg.waitForTimeout(300);
+ ok((await pri('PT-1001'))===t2,'U8 Doctor can change priority (own patient)');
+ const ph=await pg.evaluate(()=>__careflow.DB.priorityHistory.filter(h=>h.patientId==='PT-1001').map(h=>h.role+':'+h.previous+'>'+h.new));
+ ok(ph.length===3&&ph[1].startsWith('coordinator')&&ph[2].startsWith('doctor'),'U8 history shows both roles in order',ph.join(' | '));
+ ok(!(await pg.evaluate(()=>canChangePriority(__careflow.DB.patients.find(p=>p.id==='PT-1009')))),'U9 Doctor has no priority control for another doctor\'s patient');
+ ok(await pg.locator('.nav[data-id=ingest]').count()===0,'U9 Doctor does not see the Data Import area');
+ await logout();
+ await login('admin');
+ ok(!(await pg.evaluate(()=>canChangePriority(__careflow.DB.patients[0]))),'U9 Administrator cannot change priority (no control)');
+ ok(await pg.locator('.nav[data-id=ingest]').count()===0,'U9 Administrator does not see the Data Import area');
+ await logout();
+
+ /* ================= Ingestion UI ================= */
+ await login('coordinator');await nav('ingest');await pg.waitForSelector('#ingFile');
+ const upload=async f=>{await pg.setInputFiles('#ingFile',f);await pg.waitForFunction(()=>!/Working/.test(document.body.innerText)&&document.getElementById('ingMsg'),null,{timeout:30000});await pg.waitForTimeout(200)};
+ fs.writeFileSync(T+'/notes.txt','hello');await upload(T+'/notes.txt');
+ ok(/Unsupported file type/.test(await pg.innerText('#ingMsg')),'U10 unsupported file type shows a clear validation message');
+ await upload(SAMPLES+'/PT-1002_HbA1c_report.pdf');
+ let main=await pg.innerText('.main');
+ ok(/uploaded and read successfully/.test(await pg.innerText('#ingMsg')),'U11 upload success message shown');
+ ok(/Extracted text/.test(main)&&/HbA1c/.test(main)&&/PT-1002/.test(main)&&/Matched/.test(main),'U11 PDF review shows extracted text, mapped fields and a Matched status before anything is saved');
+ ok((await pg.evaluate(()=>__careflow.DB.documents.length))===0,'U11 nothing saved before confirmation');
+ await pg.click('[data-act=ingConfirm]');await pg.waitForFunction(()=>/Import imported|imported:/.test(document.getElementById('ingMsg')?.innerText||''),null,{timeout:20000});
+ ok(/1 record\(s\) saved/.test(await pg.innerText('#ingMsg')),'U12 confirmation saves the record and reports the result');
+ await pg.waitForTimeout(300);
+ ok(/Imported/.test(await pg.locator('.card:has-text("Import history")').innerText()),'U12 import history lists the batch as Imported');
+ const gaps=await pg.evaluate(()=>__careflow.GAPS.filter(g=>g.patientId==='PT-1002').map(g=>g.rule+':'+g.reason.slice(0,40)));
+ ok(gaps.some(x=>x.startsWith('results_review')),'U13 imported report immediately feeds care-gap detection (awaiting doctor review)',gaps.join(' | '));
+ await openPt('PT-1002','tests');
+ ok(/Imported report|HbA1c/.test(await pg.innerText('.main')),'U13 imported report visible in the patient\'s Diagnostic Tests tab');
+ await openPt('PT-1002','overview');
+ ok(/Imported documents/.test(await pg.innerText('.main'))&&/PT-1002_HbA1c_report.pdf/.test(await pg.innerText('.main')),'U13 imported document listed on the profile with its original');
+ await openPt('PT-1002','ai');await pg.click('[data-act=aiGen]');await pg.waitForTimeout(300);
+ const aiT=await pg.innerText('.main');
+ ok(/Imported document/.test(aiT)&&/HbA1c 48 mmol\/mol/.test(aiT),'U14 AI summary retrieves the imported report and cites it as a source');
+ await nav('assistant');await pg.fill('#chatin','What documents were imported recently?');await pg.click('[data-act=chatSend]');await pg.waitForTimeout(300);
+ ok(/PT-1002_HbA1c_report.pdf/.test(await pg.innerText('.msgs')),'U14 AI chat answers from the imported documents');
+ await pg.fill('#chatin','Summarise Emma Parker');await pg.click('[data-act=chatSend]');await pg.waitForTimeout(300);
+ ok(/48 mmol\/mol/.test(await pg.locator('.msg.a').last().innerText()),'U14 AI chat patient summary includes imported findings');
+ /* CSV with uncertain matches */
+ await nav('ingest');await upload(SAMPLES+'/patients_import.csv');
+ main=await pg.innerText('.main');
+ ok(await pg.locator('[data-act=ingLink]').count()>=2&&/Decision needed/.test(main),'U15 uncertain matches present candidate patients to link (manual review)');
+ ok(await pg.locator('[data-act=ingConfirm]').isDisabled(),'U15 Confirm is disabled until every uncertain match is resolved');
+ ok(/Duplicate/.test(main)&&/Invalid/.test(main),'U15 duplicate and invalid rows are visible, not hidden');
+ for(let i=await pg.locator('[data-act=ingSkip]').count()-1;i>=0;i--){await pg.locator('[data-act=ingSkip]').nth(i).click();await pg.waitForTimeout(250)}
+ ok(!(await pg.locator('[data-act=ingConfirm]').isDisabled()),'U15 Confirm enabled once the reviewer has decided');
+ await pg.click('[data-act=ingConfirm]');await pg.waitForFunction(()=>/saved to the database/.test(document.getElementById('ingMsg')?.innerText||''),null,{timeout:20000});
+ await pg.waitForTimeout(300);
+ const imp=await pg.evaluate(()=>({n:__careflow.DB.patients.filter(p=>p.id==='PT-2001').length,p:__careflow.DB.patients.find(p=>p.id==='PT-2001')}));
+ ok(imp.n===1&&imp.p.priority==='med','U16 new patient created once with default Medium priority',JSON.stringify(imp.p&&imp.p.priority));
+ await nav('patients');await pg.fill('[data-b="f.name"]','Fiona');
+ ok(await pg.locator('tbody tr').count()===1,'U16 imported patient appears in the directory');
+ await pg.evaluate(()=>__careflow.syncIdle());
+ const pre={pri1001:await pri('PT-1001'),n:await pg.evaluate(()=>__careflow.DB.patients.length),docs:await pg.evaluate(()=>__careflow.DB.documents.length)};
+ await logout();
+
+ /* ================= persistence across a server restart ================= */
+ await stopSrv();await startSrv();await pg.reload();
+ await login('coordinator');
+ const post={pri1001:await pri('PT-1001'),n:await pg.evaluate(()=>__careflow.DB.patients.length),docs:await pg.evaluate(()=>__careflow.DB.documents.length),hist:await pg.evaluate(()=>__careflow.DB.priorityHistory.filter(h=>h.patientId==='PT-1001').length)};
+ ok(post.pri1001===pre.pri1001&&post.n===pre.n&&post.docs===pre.docs&&post.hist===3,'U17 after a server restart: priority, history, imported patients and documents are all still there',JSON.stringify({pre,post}));
+ ok(await pg.evaluate(()=>!localStorage.length&&!Object.keys(localStorage).some(k=>/careflow/i.test(k))),'U17 no patient data is held in browser localStorage');
+ console.log('browser errors:',errs.length?errs:'none');ok(errs.length===0,'U18 no JavaScript errors during the run');
+ await b.close();await stopSrv();
+ console.log('\n'+(total-fails)+'/'+total+' UI checks passed');process.exit(fails?1:0);
+})().catch(async e=>{console.error('TEST CRASH',e.message);await stopSrv();process.exit(1)});

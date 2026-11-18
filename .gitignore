@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+
+# Runtime data (recreated and seeded on first start)
+backend/database/*.db
+backend/database/*.db-wal
+backend/database/*.db-shm
+backend/uploads/
+
+# Local / editor
+.env
+.vscode/
+.claude/
