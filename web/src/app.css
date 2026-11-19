@@ -5,4 +5,5 @@
 .main a:hover{text-decoration:underline}
 a.plain,.main a.plain{color:inherit;text-decoration:none}
 .nav{text-decoration:none}
+.nav.disabled{opacity:.45;cursor:not-allowed;user-select:none}.nav.disabled:hover{background:none}
 tr.click{cursor:pointer}

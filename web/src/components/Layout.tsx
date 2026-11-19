@@ -9,7 +9,8 @@ import { ROLE_LABEL, fmtDateTime } from '../lib/format'
 import { Icon, type IconName } from './Icon'
 import { Avatar, Empty, Modal } from './ui'
 
-interface NavItem { to: string; label: string; icon: IconName; roles: Role[] }
+/** `disabled` items stay visible in the menu but are greyed out and not clickable. */
+interface NavItem { to: string; label: string; icon: IconName; roles: Role[]; disabled?: boolean }
 
 export const NAV: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: 'dash', roles: ['coordinator', 'doctor', 'admin'] },
@@ -19,8 +20,8 @@ export const NAV: NavItem[] = [
   { to: '/tests', label: 'Diagnostic Tests', icon: 'flask', roles: ['coordinator', 'doctor'] },
   { to: '/tasks', label: 'Tasks & Follow-ups', icon: 'task', roles: ['coordinator', 'doctor', 'admin'] },
   { to: '/assistant', label: 'AI Care Assistant', icon: 'spark', roles: ['coordinator', 'doctor'] },
-  { to: '/performance', label: 'Doctor Performance', icon: 'bars', roles: ['doctor', 'admin'] },
-  { to: '/executive', label: 'Executive Overview', icon: 'trend', roles: ['admin'] },
+  { to: '/performance', label: 'Doctor Performance', icon: 'bars', roles: ['doctor', 'admin'], disabled: true },
+  { to: '/executive', label: 'Executive Overview', icon: 'trend', roles: ['admin'], disabled: true },
   { to: '/settings', label: 'Settings', icon: 'cog', roles: ['coordinator', 'doctor', 'admin'] },
 ]
 
@@ -121,7 +122,10 @@ export function Layout({ user }: { user: User }) {
         )}
       </header>
       <nav className="side" aria-label="Main navigation">
-        {NAV.filter((n) => n.roles.includes(user.role)).map((n) => (
+        {NAV.filter((n) => n.roles.includes(user.role)).map((n) => n.disabled ? (
+          <span key={n.to} className="nav disabled" aria-disabled="true" title={`${n.label} is not available in this version`}>
+            <Icon name={n.icon} /><span>{n.label}</span></span>
+        ) : (
           <NavLink key={n.to} to={n.to} end={n.to === '/'} className={({ isActive }) => 'nav' + (isActive || (n.to === '/patients' && loc.pathname.startsWith('/patients')) ? ' on' : '')}>
             <Icon name={n.icon} /><span>{n.label}</span>{n.to === '/care-gaps' && highGaps > 0 && <span className="n">{highGaps}</span>}
           </NavLink>

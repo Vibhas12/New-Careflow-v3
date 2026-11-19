@@ -206,7 +206,7 @@ function AdminDash({ d }: { d: any }) {
   return (
     <>
       <PageHead title="Operations Dashboard" sub="Aggregated operational view. Patients appear by ID only – clinical detail is restricted for your role."
-        actions={<button className="btn sec" onClick={() => nav('/executive')}>Executive overview</button>} />
+        actions={<button className="btn sec" disabled title="Executive Overview is not available in this version">Executive overview</button>} />
       <div className="grid g5">
         <Kpi label="Active patients" value={d.kpis.activePatients} />
         <Kpi label="Appointments today" value={d.kpis.appointmentsToday} onClick={() => nav('/appointments')} />
